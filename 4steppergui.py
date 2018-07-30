@@ -1,19 +1,13 @@
-
 from numpy import *
 import random
 import time
 import math
 import os
-from tkinter import font
 import tkinter as tk
+from tkinter import font
+from tkinter import filedialog
 import RPi.GPIO as GPIO
 import subprocess #For taking a picture with fswebcam
-import pygame #will be replace with opencv stuff. EFF YOU PYGAME
-import pygame.camera
-
-from pygame.locals import *
-
-pygame.init()
 
 GPIO.setmode(GPIO.BOARD)
 
@@ -30,10 +24,10 @@ YScanMin = 0
 YScanMax = 0
 ZScanMin = 0
 ZScanMax = 0
-XScanStep = 0
-YScanStep = 0
-ZScanStep = 0
-RScanNumber = 0
+XScanStep = 100 #A good default
+YScanStep = 100
+ZScanStep = 500 
+RScanNumber = 1
 
 FactorsOf160 = [1,2,4,5,8,10,16,20,32,40,80,160] #for drop down menu of rotations of R
 
@@ -126,7 +120,7 @@ def DefineScan(XMin, XMax, YMin, YMax, XSteps=100, YSteps=100):
 
     return(xscan,yscan)
 
-def GridScan(XMin=0,XMax=1000,YMin=0,YMax=1000,ZMin = GlobalZ,ZMax=GlobalZ,XSteps=100,YSteps=100, ZSteps=1,NumberOfRotations = 1):
+def GridScan(XMin,XMax,YMin,YMax,ZMin = GlobalZ,ZMax=GlobalZ,XSteps=100,YSteps=100, ZSteps=1,NumberOfRotations = 1):
     '''Does the actual THREEd moving for a scan. Default Zmin to Zmax set up to only take one picture (current Z value). Pretty hacky.
 If you want to rotate but not z step, set steps to 1 and max and min to the Z height you want to scan.
 
@@ -138,6 +132,8 @@ This one uses the original 2d raster scan from stack.
     '''ADD ONE BECAUSE HALF INTERVAL and people often round to whole numbers.
     
     '''
+    save_location = filedialog.askdirectory()
+    
     XCoord = XYCoord[0]
     YCoord = XYCoord[1]
     ZCoord = list(arange(ZMin, ZMax+1, ZSteps)) #again add one because people often round and you want at least 1
@@ -163,7 +159,7 @@ This one uses the original 2d raster scan from stack.
         
         for w in range(len(ZCoord)):
             
-            folder = 'Z' + str(ZCoord[w]) + "R" + str(j+1)
+            folder = save_location + "/Z" + str(ZCoord[w]).zfill(4) + "R" + str(j+1).zfill(3)
             if not os.path.exists(folder):
                 os.makedirs(folder)
             
@@ -181,7 +177,7 @@ This one uses the original 2d raster scan from stack.
             
             
             
-                name = "X" + str(XCoord[i]) + "Y" + str(YCoord[i]) + "Z" + str(ZCoord[w]) + "R" + str(j+1) + "of" + str(NumberOfRotations) + filetype
+                name = "X" + str(XCoord[i]).zfill(4) + "Y" + str(YCoord[i]).zfill(4) + "Z" + str(ZCoord[w]).zfill(4) + "R" + str(j+1).zfill(3) + "of" + str(NumberOfRotations).zfill(3) + filetype
             
             #sometimes process fails possibly because USB webcam fails.
             #This will see if ending the processing and moving on fixes it.
@@ -298,29 +294,6 @@ def MultiRepeatTest(num_repeats = 100):
         
         
     return(X_History,Y_History)        
-
-def StartCamera():
-    """starts the camera. Separated from take pic so doesn't have to be loaded multiple times"""
-    pygame.camera.init()
-    cam = pygame.camera.Camera(pygame.camera.list_cameras()[0])
-    cam.start()
-    return cam #and pass it off to TakePic. Hopefully faster than creating it every time
-
-def QuitCamera():
-    """Quits the camera. Should this really be a function?"""
-    pygame.camera.quit()
-    
-def TakePic(cam):
-    
-    img = cam.get_image()
-
-    #pygame.image.save(img, "todaysdate" + "X" + X + "Y" + Y + "Z" + Z + ".png")
-    
-    return img #save a batch of them at once
-
-#def SavePics(ImgLists):
-#    #receives a list of lists of form [img,x,y,z] and saves file with those coordinates
-#    for imlist 
 
 
 def MoveX(direction,numsteps,delay):
@@ -556,11 +529,19 @@ def HomeZ():
                 MoveZ(ZBACKWARD,1,FAST)
             #do stepping protocol (second in case button already pressed)
         MoveZ(ZBACKWARD,1,FAST)#dir dis delay
-        
+
+def GuiScan():
+    
+    
+    
+    GridScan(XScanMin,XScanMax,YScanMin,YScanMax,ZScanMin,ZScanMax,XScanStep,YScanStep,ZScanStep,RScanNumber)
+    
+
 def SetR():
     #gets entry from dropdown for rotations and passes to global variable 
     global RScanNumber
     RScanNumber = int(RSetVar.get())
+    print ('viewing {} points of view'.format(str(RScanNumber)))
     
 
 
@@ -678,10 +659,7 @@ def SetYStep():
     YScanStep = GlobalY
     print("Step size for Y has been set to {}".format(YScanStep))
 
-def GuiScan():
-    
-    GridScan(XScanMin,XScanMax,YScanMin,YScanMax,ZScanMin,ZScanMax,XScanStep,YScanStep,ZScanStep,RScanNumber)
-    
+
 win.title("Raspberry Pi GUI")
 win.geometry('1400x880')
 
