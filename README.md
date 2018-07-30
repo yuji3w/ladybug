@@ -5,7 +5,7 @@ LADYBUG is a 4-axis motorized microscope made from 3D-printed and inexpensive co
 What does this mean?
 
 It has four axes --- X,Y,Z, and rotational. 
-It is motorized --- Each of these axes is powered by steper motors, and controlld via arduino or raspberry pi. In the current version, the motors and frames are largely sources from optical disk drives. 
+It is motorized --- Each of these axes is powered by stepper motors, and controlled via arduino or raspberry pi. In the current version, the motors and frames are sourced from optical disk drives. 
 It is a microscope --- or, rather, it carries a USB microscope along one axis. The other one to three axes move a sample of interest. 
 It is meant to be affordable and accessible. Anyone can build a Ladybug, and in fact, the first one was built largely out of discarded trash. We have hobbyists, students, and teachers in mind.
 
