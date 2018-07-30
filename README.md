@@ -4,17 +4,14 @@ LADYBUG is a 4-axis motorized microscope made from 3D-printed and inexpensive co
 
 What does this mean?
 
-It has four axes --- X,Y,Z, and rotational. 
-It is motorized --- Each of these axes is powered by stepper motors, and controlled via arduino or raspberry pi. In the current version, the motors and frames are sourced from optical disk drives. 
-It is a microscope --- or, rather, it carries a USB microscope along one axis. The other one to three axes move a sample of interest. 
-It is meant to be affordable and accessible. Anyone can build a Ladybug, and in fact, the first one was built largely out of discarded trash. We have hobbyists, students, and teachers in mind.
+It has four axes --- X,Y,Z, and rotational. It is motorized --- Each of these axes is powered by stepper motors, and controlled via arduino or raspberry pi. In the current version, the motors and frames are sourced from optical disk drives.  And unlike a typical 3D scanner, it is also a microscope --- or, rather, it carries a USB microscope along one axis. It works in concert with the other one to three axes to take microscopic pictures of a sample from almost any point of view.
 
-Ladybug is currently capable of 2-axis (XY) scanning of a slide, petri dish, or otherwise flat sample,
-3-axis (XYZ) scanning of a coverslip,and 4-axis (XYZR) scanning of a small, 3-dimensional object, like an insect. 
+And it is affordable --- Ladybug is 3D printed, and makes use of cheap or free consumer electronics.
 
-In the future, we would like to enable real-time motion tracking of, for instance, an ant, or small animal from pondwater, 
+Ladybug is currently operated with a Raspberry pi, and is capable of 2-axis (XY) scanning of a slide, petri dish, or otherwise flat sample, 3-axis (XYZ) scanning of a coverslip,and 4-axis (XYZR) scanning of a small, 3-dimensional object, like an insect. But we see it capable of doing much more than scanning --- for instance, automated motorized tracking of an animal in pond water.
 
+We have our sights on an arduino-controlled version and corresponding printed circuit board, to make the system cheaper, faster, and easier to build and handle.
 
-Contributors: Ahron Wayne, Yujie Wang, Daniel Piotrowski.
+Main contributors: Ahron Wayne, Yujie Wang, Daniel Piotrowski.
 
 Contact: AhronWayne@Gmail.com
