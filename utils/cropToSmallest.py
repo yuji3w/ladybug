@@ -2,8 +2,8 @@ import cv2
 import numpy as np
 import os, sys
 
-importDir = r"C:\Users\wangy\Desktop\import"
-exportDir = r"C:\Users\wangy\Desktop\export"
+importDir = r"G:\Aharon\SCANS\Picolay Trial\samples"
+exportDir = r"G:\Aharon\SCANS\Picolay Trial\samples"
 
 def crop(yDim, xDim):
 	global img
@@ -38,11 +38,6 @@ def exportImg(folder, fileName):
 
 
 
-r'''img = cv2.imread(r"C:\Users\wangy\Desktop\lenna.jpg")
-crop(600,600)
-cv2.imshow("cropped", crop_img)
-cv2.waitKey(0)
-cv2.imwrite(r"C:\Users\wangy\Desktop\heyoo.jpg",crop_img)'''
 imgList, minH, minW = scanDim(importDir)
 for file in imgList:
 	img = cv2.imread(file)
