@@ -8,7 +8,7 @@ It has four axes --- X,Y,Z, and rotational. It is motorized --- Each of these ax
 
 And it is affordable --- Ladybug is 3D printed, and makes use of cheap or free consumer electronics.
 
-Ladybug is currently operated with a Raspberry pi, and is capable of 2-axis (XY) scanning of a slide, petri dish, or otherwise flat sample, 3-axis (XYZ) scanning of a coverslip,and 4-axis (XYZR) scanning of a small, 3-dimensional object, like an insect. But we see it capable of doing much more than scanning --- for instance, automated motorized tracking of an animal in pond water.
+Ladybug is currently operated with a Raspberry pi, and is capable of 2-axis (XY) scanning of a slide, petri dish, or otherwise flat sample, 3-axis (XYZ) scanning of a coverslip,and 4-axis (XYZR) scanning of a small, 3-dimensional object, like an insect. But we see it as a general purpose, motorized photography studio for small objects. 
 
 We have our sights on an arduino-controlled version and corresponding printed circuit board, to make the system cheaper, faster, and easier to build and handle.
 
