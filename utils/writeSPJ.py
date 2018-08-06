@@ -1,7 +1,18 @@
 import os
+import argparse
 
-rootFolder = r"G:\Aharon\SCANS\rocketbeetle"
-outputFolder = r"G:\Aharon\SCANS\rocketbeetle"
+parser = argparse.ArgumentParser()
+parser.add_argument("-i", "--input", required=True, help="input folder")
+parser.add_argument("-o", "--output", required=True, help="output folder")
+parser.add_argument("-e", "--extension", required=False, help="file extension without .")
+args = vars(parser.parse_args())
+
+extension = ".png"
+if args["extension"]:
+	extension = "." + args["extension"]
+
+rootFolder = args["input"]
+outputFolder = args["output"]
 
 def createSPJ(folder):
 	global SPJ
@@ -31,7 +42,7 @@ rawFolders = [x[0] for x in os.walk(rootFolder)]
 print(rawFolders)
 #f = open("hello.aio","x")
 for folder in rawFolders:
-	if any(file.endswith(".jpg") for file in os.listdir(folder)):
+	if any(file.endswith(extension) for file in os.listdir(folder)):
 		#print(folder)
 		createSPJ(folder)
 		modifySPJ(folder)

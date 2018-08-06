@@ -3,6 +3,17 @@
 from imutils import paths
 import os, os.path
 import cv2
+import argparse
+
+parser = argparse.ArgumentParser()
+parser.add_argument("-f", "--folder", required=True, help="folder location")
+parser.add_argument("-e", "--extension", required=False, help="file extension without .")
+args = vars(parser.parse_args())
+
+folder = args["folder"]
+extension = ".png"
+if args["extension"]:
+	extension = "." + args["extension"]
 
 #code adapted from https://www.pyimagesearch.com/2015/09/07/blur-detection-with-opencv/
 
@@ -30,4 +41,4 @@ def evalBlur(images):
 	return bestImage
 
 #Test
-print(evalBlur(r"G:\ANACONDA\focusstack\focusstack-master\Input"))
+print(evalBlur(folder))

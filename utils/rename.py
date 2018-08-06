@@ -11,9 +11,21 @@ RENAMES FILES (not folders) in search_dir by DATE TAKEN
  
 # importing os module
 import os
+import argparse
 
-search_dir = "E:\small bee scan\testformist"
-NAME_PREFEX = "bee"
+parser = argparse.ArgumentParser()
+parser.add_argument("-f", "--folder", required=True, help="folder location or search dir")
+parser.add_argument("-p", "--prefix", required=True, help="name prefix")
+parser.add_argument("-e", "--extension", required=False, help="file extension without .")
+args = vars(parser.parse_args())
+
+folder = args["folder"]
+extension = ".png"
+if args["extension"]:
+    extension = "." + args["extension"]
+
+search_dir = folder
+NAME_PREFEX = args["prefix"]
 
 os.chdir(search_dir)
 files = filter(os.path.isfile, os.listdir(search_dir))
@@ -27,7 +39,7 @@ def main():
     i = 0
      
     for filename in files:
-        dst = NAME_PREFEX + str(i) + ".png"
+        dst = NAME_PREFEX + str(i) + extension
         src = filename
         dst = search_dir + "\\" + dst
          

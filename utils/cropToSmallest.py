@@ -1,9 +1,20 @@
 import cv2
 import numpy as np
 import os, sys
+import argparse
 
-importDir = r"G:\Aharon\SCANS\Picolay Trial\samples"
-exportDir = r"G:\Aharon\SCANS\Picolay Trial\samples"
+parser = argparse.ArgumentParser()
+parser.add_argument("-i", "--input", required=True, help="input location")
+parser.add_argument("-o", "--output", required=True, help="output location")
+parser.add_argument("-e", "--extension", required=False, help="file extension without .")
+args = vars(parser.parse_args())
+
+extension = ".png"
+if args["extension"]:
+	extension = "." + args["extension"]
+
+importDir = args["input"]
+exportDir = args["output"]
 
 def crop(yDim, xDim):
 	global img
@@ -20,7 +31,7 @@ def scanDim(folder):
 	minH = minW = sys.maxsize
 	imgList = []
 	for file in os.listdir(folder):
-		if file.endswith(".jpg"):
+		if file.endswith(extension):
 			imgList.append(os.path.join(folder,file))
 			tempImg = cv2.imread(os.path.join(folder,file))
 			height, width, channels = tempImg.shape
@@ -32,10 +43,6 @@ def exportImg(folder, fileName):
 	global img
 	file = os.path.join(folder,fileName)
 	cv2.imwrite(file,img)
-
-
-
-
 
 
 imgList, minH, minW = scanDim(importDir)

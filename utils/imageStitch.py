@@ -1,10 +1,18 @@
 import cv2
 import os
+import argparse
 
+parser = argparse.ArgumentParser()
+parser.add_argument("-i", "--input", required=True, help="folder input")
+parser.add_argument("-o", "--output", required=True, help="folder output")
+parser.add_argument("-e", "--extension", required=False, help="file extension without .")
+args = vars(parser.parse_args())
 
-
-folder = r"C:\Users\wangy\Desktop\stitchem"
-output = r"C:\Users\wangy\Desktop\stitchemoutput"
+folder = args["input"]
+output = args["output"]
+extension = ".png"
+if args["extension"]:
+	extension = "." + args["extension"]
 
 stitcher = cv2.createStitcher(False)
 
@@ -23,7 +31,7 @@ fileList = []
 imgList = []
 
 for file in os.listdir(folder):
-		if file.endswith(".jpg"):
+		if file.endswith(extension):
 			fileList.append(os.path.join(folder,file))
 
 for file in fileList:
