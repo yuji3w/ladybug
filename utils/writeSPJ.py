@@ -30,7 +30,7 @@ def modifySPJ(folder):
 	SPJ.write("  <sourceImages>\n")
 	for root, dirs, files in os.walk(folder):
 		for file in files:
-			if file.endswith('.jpg'):
+			if file.endswith(extension):
 				SPJ.write("    <sourceImage filePath=\"")
 				SPJ.write(os.path.join(folder,file))
 				SPJ.write("\" />\n")
