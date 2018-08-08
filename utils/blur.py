@@ -4,6 +4,7 @@ from imutils import paths
 import os, os.path
 import cv2
 import argparse
+import operator
 
 parser = argparse.ArgumentParser()
 parser.add_argument("-f", "--folder", required=True, help="folder location")
@@ -24,6 +25,7 @@ def variance_of_laplacian(image):
 
 #images should be passed in from another .py file that imports blur.py
 def evalBlur(images):
+	blurDict = {}
 	bestFocusMetric = 0
 	#make the image grayscale and use LaPlace to evaluate focus
 	for imagePath in paths.list_images(images):
@@ -31,6 +33,7 @@ def evalBlur(images):
 		gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
 		#for focusMetric, higher is better
 		focusMetric = variance_of_laplacian(gray)
+		blurDict[imagePath] = focusMetric
 		if focusMetric > bestFocusMetric:
 			bestImage = imagePath
 			bestFocusMetric = focusMetric
@@ -38,7 +41,8 @@ def evalBlur(images):
 		print(imagePath)
 		print(focusMetric)
 
-	return bestImage
+	return blurDict, bestImage
 
 #Test
 print(evalBlur(folder))
+
