@@ -1,3 +1,11 @@
+'''
+Kills all files in folder (no subdirectories)
+
+Ahron and Yujie
+
+'''
+
+
 import os
 import glob
 import argparse

@@ -1,3 +1,11 @@
+'''
+
+Writes SPJ project files which can be opened with Microsoft ICE. This is a stopgap until (hopefully) real-time image stitching with OpenCV.
+
+Yujie
+
+'''
+
 import os
 import argparse
 

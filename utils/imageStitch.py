@@ -1,3 +1,12 @@
+'''
+
+Stitches together multiple images as long as they are in the same folder.
+
+Yujie
+
+'''
+
+
 import cv2
 import os
 import argparse

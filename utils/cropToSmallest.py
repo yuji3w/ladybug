@@ -1,3 +1,11 @@
+'''
+
+Crops images to smallest dimensions of image in folder. Will crop evenly from each side.
+
+Yujie
+
+'''
+
 import cv2
 import numpy as np
 import os, sys

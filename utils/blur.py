@@ -1,4 +1,10 @@
-#should work with python 3 / cv2
+'''
+
+Finds the focus metric which is inversely correlated with blurriness. The most in focus files will have high focus metrics. evalBlur exports a list of sorted tuples from least to most in focus.
+
+Yujie
+
+'''
 
 from imutils import paths
 import os, os.path
@@ -41,7 +47,7 @@ def evalBlur(images):
 		print(imagePath)
 		print(focusMetric)
 	sortedBlur = sorted(blurDict.items(), key=operator.itemgetter(1))
-	#this is a list from worst (lowest focus metric) to best (highest fm)
+	#this is a list of tuples from worst (lowest focus metric) to best (highest fm)
 	return sortedBlur, bestImage
 
 #Test

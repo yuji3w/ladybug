@@ -1,3 +1,12 @@
+'''
+
+Stitches multiple images together using OpenCV. Must be in same folder. If num images is large, this won't work and will be VERY computationally expensive. Use with caution.
+
+Yujie
+
+'''
+
+
 import cv2
 import os
 import argparse
