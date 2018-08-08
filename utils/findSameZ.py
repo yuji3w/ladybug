@@ -10,10 +10,9 @@ Yujie and Ahron.
 
 import os
 import argparse
+import sys
 
-hardcode = False
-
-if not hardcode:
+if len(sys.argv) > 1:
 	parser = argparse.ArgumentParser()
 	parser.add_argument("-i", "--input", required=True, help="input location")
 	parser.add_argument("-o", "--output", required=True, help="output location")
@@ -72,12 +71,11 @@ duplicate_z = sorted(list_duplicates(zFiles)) #https://stackoverflow.com/questio
 #copy original files to new folders or move if input and output are the same
 
 for set_of_duplicates in duplicate_z:
-    new_folder = outputFolder + "\\" + "fix" + set_of_duplicates[0] #fix because for some goshdang reason picolay won't accept otherwise
+    new_folder = outputFolder + "\\" + set_of_duplicates[0].strip(extension) #fix because for some goshdang reason picolay won't accept otherwise
     os.mkdir(new_folder)
     for location in set_of_duplicates[1]: 
         old_path = files[location]
         old_name = os.path.basename(old_path)
         new_path = new_folder + "\\" + old_name
         os.rename(old_path,new_path)
-        
         
