@@ -40,8 +40,9 @@ def evalBlur(images):
 		#print(bestImage)
 		print(imagePath)
 		print(focusMetric)
-
-	return blurDict, bestImage
+	sortedBlur = sorted(blurDict.items(), key=operator.itemgetter(1))
+	#this is a list from worst (lowest focus metric) to best (highest fm)
+	return sortedBlur, bestImage
 
 #Test
 print(evalBlur(folder))
