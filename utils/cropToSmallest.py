@@ -82,7 +82,7 @@ for file in imgList:
 
 	img = cv2.imread(file)
 	if side != "smart":
-		img = crop(img, minH, minW, side,file) 
+		img = crop(img, minH, minW, side) 
 		exportImg(img, exportDir, os.path.basename(file))
 
 	else: #do smart crop
