@@ -12,6 +12,7 @@ import os, os.path
 import cv2
 import argparse
 import operator
+import pprint
 
 parser = argparse.ArgumentParser()
 parser.add_argument("-f", "--folder", required=True, help="folder location")
@@ -52,5 +53,5 @@ def evalBlur(images):
 	return sortedBlur, bestImage
 
 #Test
-print(evalBlur(folder)[0])
+pprint.pprint(evalBlur(folder)[0])
 
