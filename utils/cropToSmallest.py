@@ -75,15 +75,22 @@ def exportImg(img, folder, fileName):
 	file = os.path.join(folder,fileName)
 	cv2.imwrite(file,img)
 
+rawFolders = [x[0] for x in os.walk(importDir)]
 
-imgList, minH, minW = scanDim(importDir)
+for currentDir in rawFolders:
+	imgList, minH, minW = scanDim(currentDir)
+	
+	newfolder = os.path.join(exportDir,os.path.basename(currentDir)) 
+	os.mkdir(newfolder)
+	for file in imgList:
 
-for file in imgList:
+		img = cv2.imread(file)
+		if side != "smart":
+			img = crop(img, minH, minW, side)
+			#print(currentDir)
+			#print(os.path.basename(currentDir))
+			
+			exportImg(img, newfolder, os.path.basename(file))
 
-	img = cv2.imread(file)
-	if side != "smart":
-		img = crop(img, minH, minW, side) 
-		exportImg(img, exportDir, os.path.basename(file))
-
-	else: #do smart crop
-		smartcrop.smart_crop(file,minW,minH, exportDir + "\\" + os.path.basename(file), False) #true resizes original image
+		else: #do smart crop
+			smartcrop.smart_crop(file,minW,minH, os.path.join(exportDir, os.path.basename(file)), False) #true resizes original image
