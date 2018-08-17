@@ -13,8 +13,10 @@ ControlP5 GUI;  // controlP5 object
 
 // lists for scrollable list 
 List cameraList;
+List portList;
 // scrollable list objects
 ScrollableList selectCamera;
+ScrollableList selectPort;
 ScrollableList save;
 
 // button objects
@@ -62,14 +64,16 @@ int value = 100;  // parametric button value
 boolean motionFlag = false;
 boolean arduinoResponse = false;
 boolean videoStarted = false;
+
 String[] cameraArray;
+String[] portArray;  // array for available port devices
 
 void setup() 
 {
   size(1280, 720);
   smooth();
-  port = new Serial(this, "COM4", 115200);
-  port.bufferUntil('\n');
+ // port = new Serial(this, "COM4", 115200);
+  //port.bufferUntil('\n');
   GUI = new ControlP5(this);
 
   Button_Setup();

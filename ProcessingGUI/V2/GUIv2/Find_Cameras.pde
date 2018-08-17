@@ -14,7 +14,7 @@ String[] findCameras()
     println("Available filtered cameras:");
     for (int i = 0; i < cameras.length; i++) 
     {
-      if (cameras[i].contains("size=640x480") && cameras[i].contains("fps=25"))// && cameras[i].contains("name=Logitech HD Webcam C270")
+      if (cameras[i].contains("size=640x480"))// && cameras[i].contains("name=Logitech HD Webcam C270") && cameras[i].contains("fps=25")
       //if (cameras[i].contains("name=USB2.0 UVC PC Camera")) //&& cameras[i].contains("fps=30") && cameras[i].contains("name=Logitech HD Webcam C270")
 
       {

@@ -14,6 +14,11 @@ void Refresh()
   cameraArray = findCameras();
   cameraList = Arrays.asList(cameraArray);
   selectCamera.addItems(cameraList);
+  
+  selectPort.removeItems(portList);
+  portArray = findPort();
+  portList = Arrays.asList(portArray);
+  selectPort.addItems(portList);
 }
 
 void Save(int n) 
