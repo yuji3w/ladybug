@@ -34,7 +34,7 @@ stitcher = cv2.createStitcher(False)
 #stitchedtemp = stitcher.stitch((img1,img2))
 #cv2.imwrite(r"C:\Users\wangy\Desktop\stitchemoutput\whatevs.jpg",stitchedtemp[1])
 
-
+#TODO: Change to have perspective correction disabled.
 
 
 fileList = []
