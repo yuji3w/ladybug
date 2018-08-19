@@ -28,7 +28,6 @@ Button Down;
 Button Left;
 Button Right;
 
-
 int xPosition = 0;
 int yPosition = 0;
 int zPosition = 0;
@@ -60,10 +59,14 @@ int greyBackround = 175;  // universal grey background
 int videoX = 320, videoY = 120, videoResX = 640, videoResY = 480;  // universal video parameters
 int value = 100;  // parametric button value
 
+String prevPort = "";  // holds old port name (static variable for Select_Port)
+
+
 // universal flags
 boolean motionFlag = false;
 boolean arduinoResponse = false;
 boolean videoStarted = false;
+boolean portSelected = false;
 
 String[] cameraArray;
 String[] portArray;  // array for available port devices
@@ -72,8 +75,7 @@ void setup()
 {
   size(1280, 720);
   smooth();
- // port = new Serial(this, "COM4", 115200);
-  //port.bufferUntil('\n');
+
   GUI = new ControlP5(this);
 
   Button_Setup();
@@ -111,6 +113,56 @@ void draw()
     text("No Camera Selected", videoX + videoResX/2, videoY + videoResY/2);
   }
 }
+
+
+
+String romanNumeral(int m)
+{
+  String month = String.valueOf(m);
+  switch(m)
+  {
+  case 1:
+    month = "I";
+    break;
+  case 2:
+    month = "II";
+    break;
+  case 3:
+    month = "III";
+    break;
+  case 4:
+    month = "IV";
+    break;
+  case 5:
+    month = "V";
+    break;
+  case 6:
+    month = "VI";
+    break;
+  case 7:
+    month = "VII";
+    break;
+  case 8:
+    month = "VIII";
+    break;
+  case 9:
+    month = "IX";
+    break;
+  case 10:
+    month = "X";
+    break;
+  case 11:
+    month = "XI";
+    break;
+  case 12:
+    month = "XII";
+    break;
+  default:
+    println("ERROR:  romanNumeral Default");
+  }
+  return month;
+}
+
 
 void serialEvent (Serial port)
 {
