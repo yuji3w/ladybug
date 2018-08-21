@@ -26,6 +26,8 @@ public void Right()
 {
   xGoto = xPosition + xOffsetValue + 100;
   println("xGoto " + xGoto);
- // port.write(xGoto);
+  port.write(xGoto);
   xPosition += 100;
+  delay(100);
+  port.write(-13);
 }

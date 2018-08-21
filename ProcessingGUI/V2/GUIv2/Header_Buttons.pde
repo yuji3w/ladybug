@@ -34,7 +34,7 @@ void Save(int n)
     case 1:
       String folderName = String.valueOf(year()) + "-" + romanNumeral(month()) + "-" + String.valueOf(day());  // generate date string for folder name 
       String imageName = String.valueOf(hour()) + "h" + String.valueOf(minute()) + "m" + String.valueOf(second()) + "s";  // generate time string for file name
-      video.save("images/" + folderName + "/" + imageName + ".jpg");  // save current image
+      video.save("images/" + folderName + "/" + imageName + ".png");  // save current image
       //video.save("images/helloWorld.jpg");  // test save
 
       break;
