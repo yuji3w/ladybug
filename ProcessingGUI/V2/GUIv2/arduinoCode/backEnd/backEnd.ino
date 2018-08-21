@@ -31,9 +31,9 @@
 
 
 #define X_LOWER_BOUNDARY        0
-#define X_UPPER_BOUNDARY        2500
+#define X_UPPER_BOUNDARY        1900
 #define Y_LOWER_BOUNDARY        0
-#define Y_UPPER_BOUNDARY        2500
+#define Y_UPPER_BOUNDARY        1900
 #define Z_LOWER_BOUNDARY        0
 #define Z_UPPER_BOUNDARY        1000
 

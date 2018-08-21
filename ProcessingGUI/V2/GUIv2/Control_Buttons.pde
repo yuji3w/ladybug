@@ -1,33 +1,69 @@
 public void Up()
 {
-  yGoto = yPosition + yOffsetValue + 100;
   println("Up!");
- // port.write(yGoto);
-  yPosition += 100;
+  port.write("6RY+100");
+  //delay(0);
+  port.write("3CU1");
 }
 
 public void Down()
 {
-  yGoto = yPosition + yOffsetValue - 100;
   println("Down!");
- // port.write(yGoto);
-  yPosition -= 100;
+  port.write("6RY-100");
+  //delay(2);
+  port.write("3CU1");
 }
 
 public void Left()
 {
-  xGoto = xPosition + xOffsetValue - value;
-  println("xGoto " + xGoto);
-  //port.write(xGoto);
-  xPosition -= 100;
+  println("Left!");
+  port.write("6RX-100");
+  //delay(2);
+  port.write("3CU1");
 }
 
 public void Right()
 {
-  xGoto = xPosition + xOffsetValue + 100;
-  println("xGoto " + xGoto);
-  port.write(xGoto);
-  xPosition += 100;
-  delay(100);
-  port.write(-13);
+  println("Right!");
+  port.write("6RX+100");
+  //delay(2);
+  port.write("3CU1");
+}
+
+
+
+public void NorthWest()
+{
+  println("NorthWest!");
+  port.write("5RX-71");
+  delay(5);
+  port.write("5RY+71");
+  port.write("3CU1");
+}
+
+public void NorthEast()
+{
+  println("NorthEast!");
+  port.write("5RX+71");
+  delay(5);
+  port.write("5RY+71");
+  port.write("3CU1");
+}
+
+public void SouthEast()
+{
+  println("SouthEast!");
+  port.write("5RX+71");
+  delay(5);
+  port.write("5RY-71");
+  port.write("3CU1");
+}
+
+public void SouthWest()
+{
+  println("SouthWest!");
+  port.write("5RX-71");
+  delay(5);
+  port.write("5RY-71");
+  port.write("3CU1");
 }

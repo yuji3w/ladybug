@@ -20,7 +20,7 @@ void Button_Setup()
     .setType(ScrollableList.DROPDOWN) // currently supported DROPDOWN and LIST
     ;
 
- portArray = findPort();
+  portArray = findPort();
   portList = Arrays.asList(portArray);
   selectPort = new ScrollableList(GUI, "Select_Port")
     .setPosition(730, 0)
@@ -74,6 +74,30 @@ void Button_Setup()
   Right = new Button(GUI, "Right")
     .setValue(value)
     .setPosition(100, 350)
+    .setSize(50, 50)
+    ;
+
+  NorthWest = new Button(GUI, "NorthWest")
+    .setValue(value)
+    .setPosition(0, 300)
+    .setSize(50, 50)
+    ;
+
+  NorthEast = new Button(GUI, "NorthEast")
+    .setValue(value)
+    .setPosition(100, 300)
+    .setSize(50, 50)
+    ;
+
+  SouthEast = new Button(GUI, "SouthEast")
+    .setValue(value)
+    .setPosition(100, 400)
+    .setSize(50, 50)
+    ;
+
+  SouthWest = new Button(GUI, "SouthWest")
+    .setValue(value)
+    .setPosition(0, 400)
     .setSize(50, 50)
     ;
 }

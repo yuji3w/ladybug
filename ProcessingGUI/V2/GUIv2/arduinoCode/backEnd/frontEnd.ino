@@ -11,7 +11,7 @@ void parseCommand(char alpha, char beta, char sign, int value)
       {
         case 'X':
           if (value < X_LOWER_BOUNDARY || value > X_UPPER_BOUNDARY)
-            Serial.println("M" + value + " out of bounds!");
+            Serial.println('m' + value + " out of bounds!");
           else
           {
             movement = value - CXP;
@@ -21,7 +21,7 @@ void parseCommand(char alpha, char beta, char sign, int value)
           break;
         case 'Y':
           if (value < Y_LOWER_BOUNDARY || value > Y_UPPER_BOUNDARY)
-            Serial.println("M" + value + " out of bounds!");
+            Serial.println('m' + value + " out of bounds!");
           else
           {
             movement = value - CYP;
@@ -31,7 +31,7 @@ void parseCommand(char alpha, char beta, char sign, int value)
           break;
         case 'Z':
           if (value < Z_LOWER_BOUNDARY || value > Z_UPPER_BOUNDARY)
-            Serial.println("M" + value + " out of bounds!");
+            Serial.println('m' + value + " out of bounds!");
           else
           {
             movement = value - CZP;
@@ -46,22 +46,23 @@ void parseCommand(char alpha, char beta, char sign, int value)
 
           break;
       }
+      break;
     case 'R':  // relative location
+      if (sign == '-')
+        value *= -1;
       switch (beta)
       {
-          if (sign == '-')
-            value *= -1;
         case 'X':
           newLocation = CXP + value;
           if (newLocation < X_LOWER_BOUNDARY)
           {
-            Serial.println("MX Boundary Met!");
+            Serial.println("mX Boundary Met!");
             value = X_LOWER_BOUNDARY - CXP;
             newLocation = X_LOWER_BOUNDARY;
           }
-          else if (value > X_UPPER_BOUNDARY)
+          else if (newLocation > X_UPPER_BOUNDARY)
           {
-            Serial.println("MX Boundary Met!");
+            Serial.println("mX Boundary Met!");
             value = X_UPPER_BOUNDARY - CXP;
             newLocation = X_UPPER_BOUNDARY;
           }
@@ -75,13 +76,13 @@ void parseCommand(char alpha, char beta, char sign, int value)
           newLocation = CYP + value;
           if (newLocation < Y_LOWER_BOUNDARY)
           {
-            Serial.println("MY Boundary Met!");
+            Serial.println("mY Boundary Met!");
             value = Y_LOWER_BOUNDARY - CYP;
             newLocation = Y_LOWER_BOUNDARY;
           }
-          else if (value > Y_UPPER_BOUNDARY)
+          else if (newLocation > Y_UPPER_BOUNDARY)
           {
-            Serial.println("MY Boundary Met!");
+            Serial.println("mY Boundary Met!");
             value = Y_UPPER_BOUNDARY - CYP;
             newLocation = Y_UPPER_BOUNDARY;
           }
@@ -96,13 +97,13 @@ void parseCommand(char alpha, char beta, char sign, int value)
           newLocation = CZP + value;
           if (newLocation < Z_LOWER_BOUNDARY)
           {
-            Serial.println("MZ Boundary Met!");
+            Serial.println("mZ Boundary Met!");
             value = Z_LOWER_BOUNDARY - CZP;
             newLocation = Z_LOWER_BOUNDARY;
           }
-          else if (value > Z_UPPER_BOUNDARY)
+          else if (newLocation > Z_UPPER_BOUNDARY)
           {
-            Serial.println("MZ Boundary Met!");
+            Serial.println("mZ Boundary Met!");
             value = Z_UPPER_BOUNDARY - CZP;
             newLocation = Z_UPPER_BOUNDARY;
           }
@@ -120,11 +121,11 @@ void parseCommand(char alpha, char beta, char sign, int value)
 
           break;
       }
-
+      break;
     case 'C':
       if (beta == 'U')  // just for testing
       {
-        Serial.print("Mrunning...");
+        Serial.print("mrunning...");
         runAndWait();
         Serial.println(" run complete");
       }
@@ -155,38 +156,46 @@ void parseCommand(char alpha, char beta, char sign, int value)
 
 void loop()
 {
-
-}
-
-
-void serialEvent()
-{
-  //Serial.println(millis());
-  byte checkSum = Serial.read() - '0';
-  Serial.println(checkSum);
-  while (Serial.available() < checkSum) {} // wait until all data has arrived
-  long numberInput = 0;  // varialble for reading in the numeric value in the command
-  char sign;
-  char CMDA = Serial.read();
-  char CMDB = Serial.read();
-  if (CMDA == 'R') // if position info is reletive...
-    sign = Serial.read();  // ...read in sign
-  //read in value
-  while (Serial.available() > 0)
+  if (Serial.available())
   {
-    //delay(1);
-    numberInput *= 10;
-    numberInput += (Serial.read() - '0');
+    //Serial.println(millis());
+    byte checkSum = Serial.read() - '0';
+    //Serial.println(checkSum);
+    while (Serial.available() < checkSum) {} // wait until all data has arrived
+    long numberInput = 0;  // varialble for reading in the numeric value in the command
+    char sign = '0';
+    char CMDA = Serial.read();
+    char CMDB = Serial.read();
+    if (CMDA == 'R') // if position info is reletive...
+      sign = Serial.read();  // ...read in sign
+    //read in value
+    while (Serial.available() > 0)
+    {
+      //delay(1);
+      numberInput *= 10;
+      numberInput += (Serial.read() - '0');
+    }
+
+    //Serial.println(millis());
+
+    Serial.print("e");
+    Serial.print(CMDA);
+    Serial.print(CMDB);
+    if (CMDA == 'R')
+      Serial.print(sign);
+    Serial.print(numberInput);
+    Serial.print(" (");
+    Serial.print(checkSum);
+    Serial.println(")");
+    parseCommand(CMDA, CMDB, sign, numberInput);
   }
 
-  //Serial.println(millis());
-
-  //Serial.print(CMDA);
-  //Serial.print(CMDB);
-
-  Serial.println(numberInput);
-  parseCommand(CMDA, CMDB, sign, numberInput);
 }
+//void serialEvent()
+//{
+
+
+//}
 
 
 

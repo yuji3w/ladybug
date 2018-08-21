@@ -27,6 +27,10 @@ Button Up;
 Button Down;
 Button Left;
 Button Right;
+Button NorthWest;
+Button NorthEast;
+Button SouthEast;
+Button SouthWest;
 
 int xPosition = 0;
 int yPosition = 0;
