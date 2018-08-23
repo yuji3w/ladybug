@@ -16,7 +16,7 @@ FACE_DETECT_REJECT_LEVELS = 1.3
 FACE_DETECT_LEVEL_WEIGHTS = 5
 
 #cascade_path = os.path.dirname(__file__) + '/cascades/haarcascade_frontalface_default.xml'
-cascade_path = r"G:\Aharon\SCANS\ladybug\utils\cascades\haarcascade_frontalface_default.xml" #hardcode fixes. Fix nongenericness later
+cascade_path = r"G:\Aharon\LADYBUG PROJECT FILES\ladybug\utils\cascades\haarcascade_frontalface_default.xml" #hardcode fixes. Fix nongenericness later
 print(cascade_path)
 
 def center_from_faces(matrix):
