@@ -11,6 +11,7 @@ Yujie and Ahron.
 import os
 import argparse
 import sys
+from shutil import copyfile
 
 if len(sys.argv) > 1:
 	parser = argparse.ArgumentParser()
@@ -77,5 +78,5 @@ for set_of_duplicates in duplicate_z:
         old_path = files[location]
         old_name = os.path.basename(old_path)
         new_path = new_folder + "\\" + old_name
-        os.rename(old_path,new_path)
+        copyfile(old_path,new_path)
         
