@@ -71,7 +71,7 @@ def scanDim(folder):
 	return imgList, minH, minW
 
 def exportImg(img, folder, fileName):
-	
+	#this also helps if the PNG file is corrupted since it essentially makes a new one
 	file = os.path.join(folder,fileName)
 	cv2.imwrite(file,img)
 
