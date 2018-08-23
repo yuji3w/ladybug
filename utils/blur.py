@@ -3,7 +3,7 @@
 Finds the focus metric which is inversely correlated with blurriness. 
 The most in focus files will have high focus metrics. evalBlur exports a list of sorted tuples from least to most in focus.
 
-Yujie
+Yujie  
 
 '''
 
