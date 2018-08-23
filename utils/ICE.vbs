@@ -1,3 +1,9 @@
+REM this script will click on a series of SPJ files and go through the microsoft ICE dialog with unordered planar stitching and autocomplete, and save as 100% quality jpeg
+REM place the SPJ files in a folder, and place this script in the parent of that folder with one icon between that folder and the script 
+REM credits to Yujie, who both deserves the nobel prize for this fix, and also to be lined up and shot. 
+
+
+
 Set WshShell = CreateObject("WScript.Shell")
 
 WScript.Sleep 1000
@@ -12,13 +18,14 @@ WScript.Sleep 100
 WshShell.SendKeys "{UP}"
 WScript.Sleep 100
 
+REM the above does the initial finding the folder and clicking on the first SPJ file
 
 Dim x
 x = 0
 
 
 Do While x < 202
-
+REM the number of SPJ files you have
 WshShell.SendKeys "{ENTER}"
 WScript.Sleep 5000
 
@@ -30,7 +37,7 @@ WshShell.SendKeys "{ENTER}"
 WScript.Sleep 65000
 
 
-REM FOR NOW originally like 3 hours
+REM the time it takes to do stitching plus safety
 
 
 WshShell.SendKeys "{TAB}"
@@ -64,7 +71,7 @@ WScript.Sleep 100
 WshShell.SendKeys "{ENTER}"
 WScript.Sleep 35000
 
-REM FOR NOW originally a minute
+REM the time it takes to do autocomplete plus safety
 
 WshShell.SendKeys "{TAB}"
 WScript.Sleep 100
