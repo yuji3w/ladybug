@@ -7,6 +7,14 @@ Yujie
 
 '''
 
+'''
+
+TODO: add extension functionality or remove fxns
+
+-Yujie
+
+'''
+
 from imutils import paths
 import os, os.path
 import cv2
