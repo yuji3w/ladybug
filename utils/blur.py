@@ -17,18 +17,7 @@ from os import listdir
 from os.path import isfile, join
 from shutil import copyfile
 
-parser = argparse.ArgumentParser()
-parser.add_argument("-i", "--input", required=True, help="input folder location")
-parser.add_argument("-o", "--output", required=True, help="output folder location")
-parser.add_argument("-e", "--extension", required=False, help="file extension without .")
-args = vars(parser.parse_args())
 
-folder = args["input"]
-output = args["output"]
-print(folder)
-extension = ".png"
-if args["extension"]:
-	extension = "." + args["extension"]
 
 #code adapted from https://www.pyimagesearch.com/2015/09/07/blur-detection-with-opencv/
 
@@ -67,12 +56,24 @@ def evalBlur(folder):
 	#this is a list of tuples from worst (lowest focus metric) to best (highest fm)
 	return sortedBlur, bestImages
 
+def main(folder, output, extension = ".png"):
+	bestImages = evalBlur(folder)[1]
+	print("\n" * 10)
+	pprint.pprint(bestImages)
 
-#Test
-bestImages = evalBlur(folder)[1]
-print("\n\n\n\n\n")
-pprint.pprint(bestImages)
+	for image in bestImages:
+		print(os.path.basename(image))
+		copyfile(image, os.path.join(output, os.path.basename(image)))
 
-for image in bestImages:
-	print(os.path.basename(image))
-	copyfile(image, os.path.join(output, os.path.basename(image)))
+
+if __name__ == '__main__':
+	parser = argparse.ArgumentParser()
+	parser.add_argument("-i", "--input", required=True, help="input folder location")
+	parser.add_argument("-o", "--output", required=True, help="output folder location")
+	parser.add_argument("-e", "--extension", required=False, help="file extension without .")
+	args = vars(parser.parse_args())
+	if args["extension"]:
+		extension = "." + args["extension"]
+		main(args["input"], args["output"], extension = extension)
+	else:
+		main(args["input"], args["output"])
