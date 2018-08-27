@@ -9,26 +9,14 @@ Yujie
 import os
 import argparse
 
-parser = argparse.ArgumentParser()
-parser.add_argument("-i", "--input", required=True, help="input folder")
-parser.add_argument("-o", "--output", required=True, help="output folder")
-parser.add_argument("-e", "--extension", required=False, help="file extension without .")
-args = vars(parser.parse_args())
-
-extension = ".png"
-if args["extension"]:
-	extension = "." + args["extension"]
-
-rootFolder = args["input"]
-outputFolder = args["output"]
-
-def createSPJ(folder):
+def createSPJ(folder, outputFolder):
 	global SPJ
 	folderAboveName = os.path.basename(os.path.dirname(folder))
 	folderName = os.path.basename(os.path.normpath(folder))
 	SPJ = open(os.path.join(outputFolder,"R"+folderAboveName+"Z"+folderName+".spj"), "x")
 
-def modifySPJ(folder):
+def modifySPJ(folder, outputFolder, extension = ".png"):
+	#TODO: fix the errors while using os.walk in high directory. It will append the file in subdir onto dir
 	global SPJ
 	folderAboveName = os.path.basename(os.path.dirname(folder))
 	folderName = os.path.basename(os.path.normpath(folder))
@@ -46,12 +34,32 @@ def modifySPJ(folder):
 	SPJ.write("</stitchProject>")
 
 
-rawFolders = [x[0] for x in os.walk(rootFolder)]
-print(rawFolders)
-#f = open("hello.aio","x")
-for folder in rawFolders:
-	if any(file.endswith(extension) for file in os.listdir(folder)):
-		#print(folder)
-		createSPJ(folder)
-		modifySPJ(folder)
-		#f = open(, "x")
+
+
+def main(rootFolder, outputFolder, extension):
+	rawFolders = [x[0] for x in os.walk(rootFolder)]
+	print(rawFolders)
+	#f = open("hello.aio","x")
+	for folder in rawFolders:
+		if any(file.endswith(extension) for file in os.listdir(folder)):
+			#print(folder)
+			createSPJ(folder, outputFolder)
+			modifySPJ(folder, outputFolder, extension)
+			#f = open(, "x")
+
+
+if __name__ == '__main__':
+	parser = argparse.ArgumentParser()
+	parser.add_argument("-i", "--input", required=True, help="input folder")
+	parser.add_argument("-o", "--output", required=True, help="output folder")
+	parser.add_argument("-e", "--extension", required=False, help="file extension without .")
+	args = vars(parser.parse_args())
+
+	extension = ".png"
+	if args["extension"]:
+		extension = "." + args["extension"]
+
+	rootFolder = args["input"]
+	outputFolder = args["output"]
+
+	main(rootFolder, outputFolder, extension)
