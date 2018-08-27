@@ -16,25 +16,7 @@ import argparse
 import subprocess
 import smartcrop #note that this file currently has a dependency hard linked inside it. 
 
-#path to smartcr
-parser = argparse.ArgumentParser()
-parser.add_argument("-i", "--input", required=True, help="input location")
-parser.add_argument("-o", "--output", required=True, help="output location")
-parser.add_argument("-e", "--extension", required=False, help="file extension without .")
-parser.add_argument("-s", "--side", required=False, help="side to preferentially crop from. left, right, top, bottom, smart (attempts to find center of image and crop from that), all. defaults to all")
-args = vars(parser.parse_args())
 
-extension = ".png"
-if args["extension"]:
-	extension = "." + args["extension"]
-
-if args["side"]: #side to crop from
-	side = str(args["side"])
-else:
-	side = "all"
-
-importDir = args["input"]
-exportDir = args["output"]
 
 def crop(img, yDim, xDim, side): #crops image evenly on all sides to specified dimensions, or from specific side (evenly on other axis)
 
@@ -58,7 +40,7 @@ def crop(img, yDim, xDim, side): #crops image evenly on all sides to specified d
 	return crop_img
 
 
-def scanDim(folder):
+def scanDim(folder, extension):
 	minH = minW = sys.maxsize #purpose? 
 	imgList = []
 	for file in os.listdir(folder):
@@ -75,22 +57,44 @@ def exportImg(img, folder, fileName):
 	file = os.path.join(folder,fileName)
 	cv2.imwrite(file,img)
 
-rawFolders = [x[0] for x in os.walk(importDir)]
 
-for currentDir in rawFolders:
-	imgList, minH, minW = scanDim(currentDir)
-	
-	newfolder = os.path.join(exportDir,os.path.basename(currentDir)) 
-	os.mkdir(newfolder)
-	for file in imgList:
 
-		img = cv2.imread(file)
-		if side != "smart":
-			img = crop(img, minH, minW, side)
-			#print(currentDir)
-			#print(os.path.basename(currentDir))
-			
-			exportImg(img, newfolder, os.path.basename(file))
+def main(importDir, exportDir, extension = ".png", side = "all"):
+	rawFolders = [x[0] for x in os.walk(importDir)]
 
-		else: #do smart crop
-			smartcrop.smart_crop(file,minW,minH, os.path.join(exportDir, os.path.basename(file)), False) #true resizes original image
+	for currentDir in rawFolders:
+		imgList, minH, minW = scanDim(currentDir, extension)
+		
+		newfolder = os.path.join(exportDir,os.path.basename(currentDir)) 
+		os.mkdir(newfolder)
+		for file in imgList:
+
+			img = cv2.imread(file)
+			if side != "smart":
+				img = crop(img, minH, minW, side)
+				#print(currentDir)
+				#print(os.path.basename(currentDir))
+				
+				exportImg(img, newfolder, os.path.basename(file))
+
+			else: #do smart crop
+				smartcrop.smart_crop(file,minW,minH, os.path.join(exportDir, os.path.basename(file)), False) #true resizes original image
+
+
+if __name__ == '__main__':
+	parser = argparse.ArgumentParser()
+	parser.add_argument("-i", "--input", required=True, help="input location")
+	parser.add_argument("-o", "--output", required=True, help="output location")
+	parser.add_argument("-e", "--extension", required=False, help="file extension without .")
+	parser.add_argument("-s", "--side", required=False, help="side to preferentially crop from. left, right, top, bottom, smart (attempts to find center of image and crop from that), all. defaults to all")
+	args = vars(parser.parse_args())
+
+	side = "all"
+	if args["side"]: #side to crop from
+		side = str(args["side"])
+	extension = ".png"
+	if args["extension"]:
+		extension = "." + args["extension"]
+
+	main(args["input"], args["output"], extension, side)
+		
