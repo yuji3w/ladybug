@@ -12,6 +12,16 @@ For instance, if we have 4 Z heights (folders) each containing 20 scan locations
 
 
 """
+
+'''
+
+Add main to this, Ahron
+
+-Yujie
+
+'''
+
+
 #tkinter for file path asking
 import tkinter as tk
 from tkinter import filedialog

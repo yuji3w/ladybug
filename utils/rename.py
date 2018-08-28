@@ -4,7 +4,18 @@ Created on Mon Jul 16 17:59:11 2018
 RENAMES FILES (not folders) in search_dir by DATE TAKEN
 
 @author: awayne1
+
 """
+
+'''
+
+Fix the main call, Ahron
+
+-Yujie
+
+'''
+
+
 
 # Pythono3 code to rename multiple 
 # files in a directory or folder
