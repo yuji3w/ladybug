@@ -22,4 +22,5 @@ if args["extension"]:
 
 files = glob.glob(folder)
 for f in files:
-    os.remove(f)
+	os.remove(f)
+
