@@ -13,6 +13,8 @@ import argparse
 import sys
 from shutil import copyfile
 
+"""
+
 if len(sys.argv) > 1:
 	parser = argparse.ArgumentParser()
 	parser.add_argument("-i", "--input", required=True, help="input location")
@@ -32,6 +34,31 @@ else:
 	inputFolder = r"G:\Aharon\SCANS\picolay batch test wasp - Copy"
 	outputFolder =r"G:\Aharon\SCANS\test wasp output" 
 	extension = ".jpg"
+
+"""
+# This is a legacy commit for hardcoding in IDE if ahron needs to go back
+
+
+if len(sys.argv) > 1:
+	parser = argparse.ArgumentParser()
+	parser.add_argument("-i", "--input", required=True, help="input location")
+	parser.add_argument("-o", "--output", required=True, help="output location")
+	parser.add_argument("-e", "--extension", required=False, help="file extension without .")
+	args = vars(parser.parse_args())
+
+
+	inputFolder = args["input"]
+	outputFolder = args["output"]
+	extension = ".png"
+	if args["extension"]:
+		extension = "." + args["extension"]
+
+
+else:
+	inputFolder = r"G:\Aharon\SCANS\picolay batch test wasp - Copy"
+	outputFolder =r"G:\Aharon\SCANS\test wasp output" 
+	extension = ".jpg"
+
 
 
 #beautiful list comprehension for files from https://stackoverflow.com/questions/28682226/list-comprehension-with-if-conditional-to-get-list-of-files-of-a-specific-type
