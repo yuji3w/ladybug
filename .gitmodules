@@ -1,3 +1,0 @@
-[submodule "OpenPano"]
-	path = third party/OpenPano
-	url = https://github.com/ppwwyyxx/OpenPano.git
