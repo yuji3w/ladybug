@@ -13,9 +13,10 @@ import cv2
 import numpy as np
 import os, sys
 import argparse
-import subprocess
-import smartcrop #note that this file currently has a dependency hard linked inside it. 
 
+#import subprocess
+#import smartcrop #note that this file currently has a dependency hard linked inside it. 
+#Smartcrop is a liability at the moment. 
 
 
 def crop(img, yDim, xDim, side): #crops image evenly on all sides to specified dimensions, or from specific side (evenly on other axis)
@@ -78,7 +79,8 @@ def main(importDir, exportDir, extension = ".png", side = "all"):
 				exportImg(img, newfolder, os.path.basename(file))
 
 			else: #do smart crop
-				smartcrop.smart_crop(file,minW,minH, os.path.join(exportDir, os.path.basename(file)), False) #true resizes original image
+				print('we commented out smartcrop. So I guess go edit the file and un-uncomment it')
+				#smartcrop.smart_crop(file,minW,minH, os.path.join(exportDir, os.path.basename(file)), False) #true resizes original image
 
 
 if __name__ == '__main__':
@@ -86,8 +88,8 @@ if __name__ == '__main__':
 	parser.add_argument("-i", "--input", required=True, help="input location")
 	parser.add_argument("-o", "--output", required=True, help="output location")
 	parser.add_argument("-e", "--extension", required=False, help="file extension without .")
-	parser.add_argument("-s", "--side", required=False, help="side to preferentially crop from. left, right, top, bottom, smart (attempts to find center of image and crop from that), all. defaults to all")
-	args = vars(parser.parse_args())
+	parser.add_argument("-s", "--side", required=False, help="side to preferentially crop from. left, right, top, bottom, smart (attempts to find center of image and crop from that, currently commented out), all. defaults to all")
+	args = vars(parser.parse_args())1
 
 	side = "all"
 	if args["side"]: #side to crop from
