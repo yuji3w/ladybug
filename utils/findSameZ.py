@@ -28,6 +28,7 @@ def initZList(files, zFiles):
 		fileName = "".join(fileName)
 		#put it back into string
 		zFiles.append(fileName)
+		#Make this return zFiles
 
 
 def list_duplicates(seq):
