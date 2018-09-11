@@ -89,7 +89,7 @@ if __name__ == '__main__':
 	parser.add_argument("-o", "--output", required=True, help="output location")
 	parser.add_argument("-e", "--extension", required=False, help="file extension without .")
 	parser.add_argument("-s", "--side", required=False, help="side to preferentially crop from. left, right, top, bottom, smart (attempts to find center of image and crop from that, currently commented out), all. defaults to all")
-	args = vars(parser.parse_args())1
+	args = vars(parser.parse_args())
 
 	side = "all"
 	if args["side"]: #side to crop from
