@@ -8,6 +8,8 @@ from tkinter import font
 from tkinter import filedialog
 import RPi.GPIO as GPIO
 import subprocess #For taking a picture with fswebcam
+import sys
+import select #for timeouts and buzzing when usb gets disconnect
 
 GPIO.setmode(GPIO.BOARD)
 
@@ -120,9 +122,11 @@ def DefineScan(XMin, XMax, YMin, YMax, XSteps=100, YSteps=100):
 
     return(xscan,yscan)
 
-def GridScan(XMin,XMax,YMin,YMax,ZMin = GlobalZ,ZMax=GlobalZ,XSteps=100,YSteps=100, ZSteps=1,NumberOfRotations = 1):
+def GridScan(XMin,XMax,YMin,YMax,ZMin = GlobalZ,ZMax=GlobalZ,XSteps=100,YSteps=100, ZSteps=1,NumberOfRotations = 1,StepsPerRotation=None):
     '''Does the actual THREEd moving for a scan. Default Zmin to Zmax set up to only take one picture (current Z value). Pretty hacky.
 If you want to rotate but not z step, set steps to 1 and max and min to the Z height you want to scan.
+
+update with optional StepsPerRotationvariable to allow less than full rotation in a scan. 
 
 This one uses the original 2d raster scan from stack. 
 '''
@@ -140,8 +144,15 @@ This one uses the original 2d raster scan from stack.
     
     filetype = ".png"
     num_pictures = len(XCoord)*len(ZCoord)*NumberOfRotations
+    resolution = "640x480" #fswebcam adjusts to be higher at least with alternate microscope I have
     
-    StepsPerImage = int(160/NumberOfRotations)
+    if not StepsPerRotation:
+    
+        StepsPerImage = int(160/NumberOfRotations)
+        
+    else: #partial rotating scan. Useful for timelapses and coverslips 2.5D
+        StepsPerImage = StepsPerRotation
+    
     print("Stepping {} per image".format(str(StepsPerImage))) #just for debugging
     
     #generate Z positions
@@ -157,6 +168,9 @@ This one uses the original 2d raster scan from stack.
     for j in range(NumberOfRotations): #right now only does a complete circle. 160 microsteps per rotation; 160/Number of Rotations = step size
         
         print("Starting 2D scan {} of {}".format(str(j+1),str(NumberOfRotations)))
+        GPIO.output(BEEP,GPIO.HIGH)
+        time.sleep(0.5)
+        GPIO.output(BEEP,GPIO.LOW)
         
         for w in range(len(ZCoord)):
             
@@ -174,7 +188,7 @@ This one uses the original 2d raster scan from stack.
                 YGoTo(int(YCoord[i]))
                 
                 time.sleep(0.1) #vibration control.
-            
+                #note changed from 0.1
             
             
             
@@ -186,22 +200,35 @@ This one uses the original 2d raster scan from stack.
                     try:
                         startpictime = time.time()
                     
-                        proc = subprocess.Popen(["fswebcam", "-r 640x480", "--no-banner", folder + "/" + name], stdout=subprocess.PIPE) #like check_call(infinite timeout)
+                        proc = subprocess.Popen(["fswebcam", "-r " + resolution, "--no-banner", folder + "/" + name], stdout=subprocess.PIPE) #like check_call(infinite timeout)
                         output = proc.communicate(timeout=10)[0]
                         endpictime = time.time()
                     
                     
-                        if endpictime - startpictime >0.3: #a real picture
+                        if endpictime - startpictime >0.2: #a real picture
                             break
-                        else: #usb got unplugged effing hell
-                        
-                            GPIO.output(BEEP,GPIO.HIGH)
+                        else: #usb got unplugged effing #hell
+                            
+                            #attempt to catch USB from https://stackoverflow.com/questions/1335507/keyboard-input-with-timeout-in-python  
+                            print('HEY BOZO THE USB GOT UNPLUGGED UNPLUG IT AND PLUG IT BACK IN AND THEN PRESS ENTER')
+                            
+                            GPIO.output(BEEP,GPIO.HIGH) #beep and bibrate
+                            ab, cd, ef = select.select( [sys.stdin], [], [], 10 ) #go for X seconds before retrying 
+                            if (ab): #you said enter or did anything
+                                print('okay thanks bozo. restarting with {}'.format(name))
+                                GPIO.output(BEEP,GPIO.LOW)
+                                continue
+                            else:
+                                print('okay we see if vibrating works! restarting with {}'.format(name))
+                                GPIO.output(BEEP,GPIO.LOW)
+                                continue
+                                    
+                            #GPIO.output(BEEP,GPIO.HIGH)
+                            #a = input('HEY BOZO THE USB GOT UNPLUGGED UNPLUG IT AND PLUG IT BACK IN AND THEN PRESS ENTER')
+                            #print('okay thanks bozo. restarting with {}'.format(name))
+                            #GPIO.output(BEEP,GPIO.LOW)
 
-                            a = input('HEY BOZO THE USB GOT UNPLUGGED UNPLUG IT AND PLUG IT BACK IN AND THEN PRESS ENTER')
-                            print('okay thanks bozo. restarting with {}'.format(name))
-                            GPIO.output(BEEP,GPIO.LOW)
-
-                            continue
+                    
                     
                     except subprocess.TimeoutExpired: #does not catch USB UNPLUG. Catches if it 
                 
@@ -216,7 +243,11 @@ This one uses the original 2d raster scan from stack.
         
     #QuitCamera()
     print ('scan completed successfully after {} seconds! {} images taken'.format(time.strftime("%H:%M:%S", time.gmtime(time.time() - start_time)), str(num_pictures)))
-
+    for i in range(5):
+        GPIO.output(BEEP,GPIO.HIGH)
+        time.sleep(0.5)
+        GPIO.output(BEEP,GPIO.LOW)
+    
 def XRepeatTest(num_trials=100):
     
     HomeX()
@@ -329,9 +360,9 @@ def XGoTo(XDest, XMin=0):
     if XDest <= XMax and XDest >= XMin:
         distance = XDest - GlobalX
         if distance > 0: #forward
-            MoveX(XFORWARD,distance,FAST)
+            MoveX(XFORWARD,distance,FASTER)
         else:
-            MoveX(XBACKWARD,abs(distance),FAST) 
+            MoveX(XBACKWARD,abs(distance),FASTER) 
     else:
         print ('Destination out of range')
 
@@ -373,9 +404,9 @@ def YGoTo(YDest, YMin=0):
     if YDest <= YMax and YDest >= YMin:
         distance = YDest - GlobalY
         if distance > 0: #forward
-            MoveY(YFORWARD,distance,FAST)
+            MoveY(YFORWARD,distance,FASTER)
         else:
-            MoveY(YBACKWARD,abs(distance),FAST) 
+            MoveY(YBACKWARD,abs(distance),FASTER) 
     else:
         print ('Destination out of range')
 
