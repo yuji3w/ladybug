@@ -195,7 +195,6 @@ This one uses the original 2d raster scan from stack.
                 name = "X" + str(XCoord[i]).zfill(4) + "Y" + str(YCoord[i]).zfill(4) + "Z" + str(ZCoord[w]).zfill(4) + "R" + str(j+1).zfill(3) + "of" + str(NumberOfRotations).zfill(3) + filetype
             
             #sometimes process fails possibly because USB webcam fails.
-            #This will see if ending the processing and moving on fixes it.
                 while True: #I am wrapping the whole thing in a true loop to check if proc completed too fast (no usb), then waiting for user to reboot usb. BAD
                     try:
                         startpictime = time.time()
