@@ -11,6 +11,7 @@ import subprocess #For taking a picture with fswebcam
 import sys
 import select #for timeouts and buzzing when usb gets disconnect
 
+
 GPIO.setmode(GPIO.BOARD)
 
 GlobalX = 0 #X distance from home in steps
@@ -1036,6 +1037,23 @@ SLabel._repeat_freq = 10
 SLabel._repeat_on = True
 
 
+'''
+
+begin stuff for resuming scan if it failed. Note: might not open with gu
+
+Json file present?  if so:
+
+load json file
+
+HomeX()
+HomeY()
+HomeZ()
+
+GridScan(json'sdata)
+
+
+
+'''
 
 
 
