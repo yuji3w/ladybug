@@ -1,3 +1,5 @@
+#!/usr/bin/env python3
+
 from numpy import *
 import random
 import time
@@ -10,7 +12,7 @@ import RPi.GPIO as GPIO
 import subprocess #For taking a picture with fswebcam
 import sys
 import select #for timeouts and buzzing when usb gets disconnect
-
+import pickle
 
 GPIO.setmode(GPIO.BOARD)
 
@@ -18,7 +20,7 @@ GlobalX = 0 #X distance from home in steps
 GlobalY = 0
 GlobalZ = 0
 GlobalR = 0 #keep same naming scheme, but R = rotation
-
+#Note that upon resuming a scan we have to reset this to R we left off
 
 #These are set by the GUI and passed off to scan configuration
 XScanMin = 0
@@ -53,9 +55,7 @@ StepsPerRotation = 160 #for 8th microstepping on the R axis we have
 
 XLimit = 7 #limit switch pin input
 YLimit = 13
-ZLimit = 15 #optical switch. Goes low but there is a transition
-
-ZSleep = 31 #Low, Z is OFF. High, it is ON. Currently unused
+ZLimit = 15 #optical switch. Goes low but there is a transition over a few microsteps
 
 XFORWARD = 1 #Arbitrary  
 XBACKWARD = 0   
@@ -68,6 +68,7 @@ ZBACKWARD = 1
 
 RFORWARD = 1 #To keep naming scchhhomeme. But we'll consider forward as clockwise if referenced
 RBACKWARD = 0
+
 FASTERER = 0.0003
 FASTER = 0.0006
 FAST = 0.002 #delay between steps in s,
@@ -90,26 +91,40 @@ GPIO.setup(YLimit, GPIO.IN, pull_up_down=GPIO.PUD_UP) #sense pin for Y home swit
 GPIO.setup(XLimit, GPIO.IN, pull_up_down=GPIO.PUD_UP) #sense pin for X home switch
 GPIO.setup(ZLimit, GPIO.IN) #no pull up. Direct sense
 
-#GPIO.setup(XENABLE, GPIO.OUT)
-#GPIO.setup(YENABLE, GPIO.OUT)
-GPIO.setup(ZSleep, GPIO.OUT) #low off high ON
-
-#GPIO.output(YENABLE, GPIO.HIGH)
-#GPIO.output(XENABLE, GPIO.HIGH)
-
 
 win = tk.Tk()
 myFont = tk.font.Font(family='Helvetica', size=12, weight='bold')
 myBigFont = tk.font.Font(family='Helvetica', size=20,weight='bold')
 font.families()
 
-def DefineScan(XMin, XMax, YMin, YMax, XSteps=100, YSteps=100):
-    """core from stack exchange. https://stackoverflow.com/questions/20872912/raster-scan-pattern-python"""
+
+def restart():
+    command = "/usr/bin/sudo /sbin/shutdown -r now"
+    process = subprocess.Popen(command.split(), stdout=subprocess.PIPE)
+    output = process.communicate()[0]
+    print(output)
+
+
+def DefineScan(XMin, XMax, YMin, YMax, ZMin, ZMax, RMin, RMax, XSteps=100, YSteps=100, ZSteps=1, RSteps=1):
+    """core from stack exchange. https://stackoverflow.com/questions/20872912/raster-scan-pattern-python
+    modified october 11 2018 to include Z and R, meaning R is now set in absolute positions
+    Important: Because its not inclusive in max, it will break if for instance you say rmin = 0 rmax = 0, so we add 1 to all maximums
+    so if you dont want to go more than one Z or R, set for instance Zmin=Zmax and ZSteps = 1.
+    
+    returns a list of four lists which each contain the absolute positions at every point in a scan for x,y,z,r"""
+    
+    XMax = XMax+1
+    YMax = YMax+1
+    ZMax = ZMax+1
+    RMax = RMax+1
+    
     
     # define some grids
     xgrid = arange(XMin, XMax,XSteps) 
     ygrid = arange(YMin, YMax,YSteps)
-
+    zgrid = arange(ZMin, ZMax, ZSteps)
+    rgrid = arange(RMin,RMax,RSteps)
+    
     xscan = []
     yscan = []
 
@@ -120,133 +135,187 @@ def DefineScan(XMin, XMax, YMin, YMax, XSteps=100, YSteps=100):
     # squeeze lists together to vectors
     xscan = concatenate(xscan)
     yscan = concatenate(yscan)
-
-    return(xscan,yscan)
-
-def GridScan(XMin,XMax,YMin,YMax,ZMin = GlobalZ,ZMax=GlobalZ,XSteps=100,YSteps=100, ZSteps=1,NumberOfRotations = 1,StepsPerRotation=None):
-    '''Does the actual THREEd moving for a scan. Default Zmin to Zmax set up to only take one picture (current Z value). Pretty hacky.
-If you want to rotate but not z step, set steps to 1 and max and min to the Z height you want to scan.
-
-update with optional StepsPerRotationvariable to allow less than full rotation in a scan. 
-
-This one uses the original 2d raster scan from stack. 
-'''
-    XYCoord = DefineScan(XMin,XMax+1,YMin,YMax+1,XSteps,YSteps)
+    
+    """up until this, it works just fine for x/y. I am adding 
+    my own code to account for Z now. Not efficient if there are a LOT of Z changes (it does X/Y rastering and returns to initial position for each Z).
+    Otherwise it's ok.
+    Note this will return empty lists if zgrid is empty (minz=maxz)
     
     
-    '''ADD ONE BECAUSE HALF INTERVAL and people often round to whole numbers.
+    """
     
-    '''
-    save_location = filedialog.askdirectory()
+    NewXScan = []
+    NewYScan = []
+    NewZScan = []
     
-    XCoord = XYCoord[0]
-    YCoord = XYCoord[1]
-    ZCoord = list(arange(ZMin, ZMax+1, ZSteps)) #again add one because people often round and you want at least 1
     
-    filetype = ".png"
-    num_pictures = len(XCoord)*len(ZCoord)*NumberOfRotations
-    resolution = "640x480" #fswebcam adjusts to be higher at least with alternate microscope I have
-    
-    if not StepsPerRotation:
-    
-        StepsPerImage = int(160/NumberOfRotations)
+    for i in range(len(zgrid)):
+        for j in range(len(xscan)):
         
-    else: #partial rotating scan. Useful for timelapses and coverslips 2.5D
-        StepsPerImage = StepsPerRotation
+            NewXScan.append(xscan[j])
+            NewYScan.append(yscan[j])
+            NewZScan.append(zgrid[i]) #note i not j
+        
+    #and for rotations. Same deal as with Z"
+
+    #this too will return empty lists of minr = maxr
+            
+    NewNewXScan = [] #I seriously hope nobody ever reads these variable names
+    NewNewYScan = []
+    NewNewZScan = []
+    NewNewRScan = []
     
-    print("Stepping {} per image".format(str(StepsPerImage))) #just for debugging
+    for i in range(len(rgrid)):
+        for j in range(len(NewXScan)):
+            NewNewXScan.append(NewXScan[j])
+            NewNewYScan.append(NewYScan[j])
+            NewNewZScan.append(NewZScan[j])
+            NewNewRScan.append(rgrid[i])
     
-    #generate Z positions
-    
-    
-    # goto start position
-    XGoTo(int(XCoord[0]))
-    YGoTo(int(YCoord[0]))
-    ZGoTo(int(ZCoord[0]))
+    ScanLocations = {'X':NewNewXScan,'Y':NewNewYScan,'Z':NewNewZScan,'R':NewNewRScan}
+    return(ScanLocations)
+
+
+def GridScan(ScanLocations,conditions='default'):
+     
+    XCoord = ScanLocations['X']
+    YCoord = ScanLocations['Y']
+    ZCoord = ScanLocations['Z']
+    RCoord = ScanLocations['R']
     
     start_time = time.time()
 
-    for j in range(NumberOfRotations): #right now only does a complete circle. 160 microsteps per rotation; 160/Number of Rotations = step size
-        
-        print("Starting 2D scan {} of {}".format(str(j+1),str(NumberOfRotations)))
-        GPIO.output(BEEP,GPIO.HIGH)
-        time.sleep(0.5)
-        GPIO.output(BEEP,GPIO.LOW)
-        
-        for w in range(len(ZCoord)):
-            
-            folder = save_location + "/Z" + str(ZCoord[w]).zfill(4) + "R" + str(j+1).zfill(3)
-            if not os.path.exists(folder):
-                os.makedirs(folder)
-            
-            ZGoTo(int(ZCoord[w]))
-        
-            for i in range(len(XCoord)): 
-            
-
-            
-                XGoTo(int(XCoord[i]))
-                YGoTo(int(YCoord[i]))
-                
-                time.sleep(0.1) #vibration control.
-                #note changed from 0.1
-            
-            
-            
-                name = "X" + str(XCoord[i]).zfill(4) + "Y" + str(YCoord[i]).zfill(4) + "Z" + str(ZCoord[w]).zfill(4) + "R" + str(j+1).zfill(3) + "of" + str(NumberOfRotations).zfill(3) + filetype
-            
-            #sometimes process fails possibly because USB webcam fails.
-                while True: #I am wrapping the whole thing in a true loop to check if proc completed too fast (no usb), then waiting for user to reboot usb. BAD
-                    try:
-                        startpictime = time.time()
-                    
-                        proc = subprocess.Popen(["fswebcam", "-r " + resolution, "--no-banner", folder + "/" + name], stdout=subprocess.PIPE) #like check_call(infinite timeout)
-                        output = proc.communicate(timeout=10)[0]
-                        endpictime = time.time()
-                    
-                    
-                        if endpictime - startpictime >0.2: #a real picture
-                            break
-                        else: #usb got unplugged effing #hell
-                            
-                            #attempt to catch USB from https://stackoverflow.com/questions/1335507/keyboard-input-with-timeout-in-python  
-                            print('HEY BOZO THE USB GOT UNPLUGGED UNPLUG IT AND PLUG IT BACK IN AND THEN PRESS ENTER')
-                            
-                            GPIO.output(BEEP,GPIO.HIGH) #beep and bibrate
-                            ab, cd, ef = select.select( [sys.stdin], [], [], 10 ) #go for X seconds before retrying 
-                            if (ab): #you said enter or did anything
-                                print('okay thanks bozo. restarting with {}'.format(name))
-                                GPIO.output(BEEP,GPIO.LOW)
-                                continue
-                            else:
-                                print('okay we see if vibrating works! restarting with {}'.format(name))
-                                GPIO.output(BEEP,GPIO.LOW)
-                                continue
-                                    
-                            #GPIO.output(BEEP,GPIO.HIGH)
-                            #a = input('HEY BOZO THE USB GOT UNPLUGGED UNPLUG IT AND PLUG IT BACK IN AND THEN PRESS ENTER')
-                            #print('okay thanks bozo. restarting with {}'.format(name))
-                            #GPIO.output(BEEP,GPIO.LOW)
-
-                    
-                    
-                    except subprocess.TimeoutExpired: #does not catch USB UNPLUG. Catches if it 
-                
-                        print ("{} failed :( ".format(name))
-                        proc.terminate() #corrective measure?
-                        continue #move on. In true loop, it keeps trying the same picture since it shouldn't matter which one
-            
+    """Note that we have already added 1 in the DefineScan to account for half intervals"""
     
+    
+    """conditions will contain save location, filetype, resolution. num_failures. First time running default
+    is passed which contains standard conditions, but you can always specify it if you want to."""
+    
+    if conditions == 'default':
+        save_location = filedialog.askdirectory()
+        filetype = ".png"
+        resolution = "640x480" #fswebcam adjusts to be higher at least with alternate microscope I have
+        timeallowed = 5 #number of seconds you have to save the scan.
+        num_failures = 0
+        original_pics = len(XCoord)
+        original_time = start_time
+        
+    else:
+        save_location = conditions['save_location']
+        filetype = conditions['filetype']
+        resolution = conditions['resolution']
+        timeallowed=0 #after one restart we don't bother trying to save scan
+        num_failures=conditions['num_failures']
+        original_pics=conditions['original_pics']
+        original_time=conditions['original_time']
+        
+    num_pictures = len(XCoord) #remaining, not originally
+    NumberOfRotations = len(set(RCoord))
+    stepsPerRotation = ((max(RCoord)-min(RCoord))/len(set(RCoord)))
+    
+    print("Stepping {} per image".format(str(StepsPerRotation))) #just for debugging
+    print("has failed and restarted {} times so far".format(str(num_failures)))
+    
+    XGoTo(int(XCoord[0]))
+    YGoTo(int(YCoord[0]))
+    ZGoTo(int(ZCoord[0]))
+    #RGoTo(int(RCoord[0]))
+    
+    
+        
+    for i in range(num_pictures):
+        
+        if i % 100 == 0: #every 100 pics
+            print("{} of {} pictures remaining".format((num_pictures-i),original_pics))
+            GPIO.output(BEEP,GPIO.HIGH)
+            time.sleep(0.3)
+            GPIO.output(BEEP,GPIO.LOW)
+        
+        folder = save_location + "/Z" + str(ZCoord[i]).zfill(4) + "R" + str(RCoord[i]).zfill(3) #will make new folder on each change in Z or R
+        if not os.path.exists(folder): #should hopefully continue saving in the same folder after restart
+            os.makedirs(folder)
+                
             
-        if NumberOfRotations > 1:   
-            MoveR(RFORWARD,StepsPerImage,SLOW)
+        #go to locations
+                    
+        XGoTo(int(XCoord[i]))
+        YGoTo(int(YCoord[i]))
+        ZGoTo(int(ZCoord[i]))
+        #RGoTo(int(RCoord[i]))
+            
+        time.sleep(0.1) #vibration control.
+                
+            
+            
+            
+        name = "X" + str(XCoord[i]).zfill(4) + "Y" + str(YCoord[i]).zfill(4) + "Z" + str(ZCoord[i]).zfill(4) + "R" + str(RCoord[i]).zfill(3) + "of" + str(NumberOfRotations).zfill(3) + filetype
+
+        """begin filesaving block"""
+        
+        try:
+            for w in range(3):
+                startpictime = time.time()
+        
+                proc = subprocess.Popen(["fswebcam", "-r " + resolution, "--no-banner", folder + "/" + name, "-q"], stdout=subprocess.PIPE) #like check_call(infinite timeout)
+                output = proc.communicate(timeout=10)[0]
+                endpictime = time.time()
+        
+        
+                if endpictime - startpictime >0.2: #a real picture
+                    
+                    break
+                elif w <=1: #usb got unplugged effing #hell
+                
+                    #attempt to catch USB from https://stackoverflow.com/questions/1335507/keyboard-input-with-timeout-in-python  
+                    print('HEY BOZO THE USB GOT UNPLUGGED UNPLUG IT AND PLUG IT BACK IN WITHIN {} SECONDS OR WE REBOOT'.format(timeallowed))
+                
+                    GPIO.output(BEEP,GPIO.HIGH) #beep and bibrate
+                
+                    time.sleep(timeallowed)
+                
+                    GPIO.output(BEEP,GPIO.LOW)
+                
+                else: #USB unpluged and it wasn't plugged in in time
+                    UpdatedX = XCoord[i:]
+                    UpdatedY = YCoord[i:]
+                    UpdatedZ = ZCoord[i:]
+                    UpdatedR = RCoord[i:]
+                    
+                    UpdatedScanLocations = {'X':UpdatedX, 'Y':UpdatedY, 'Z': UpdatedZ,'R':UpdatedR}
+                    
+                    num_failures +=1
+                    
+                    conditions = {'save_location':save_location, 'R_Location':int(RCoord[i]), 'filetype':filetype, 'resolution':resolution, 'num_failures':num_failures,'original_pics':original_pics,'original_time':original_time} #after restart because no gui timeout after 0 seconds
+                    
+                    scan_params = [UpdatedScanLocations,conditions]
+                    print(scan_params)
+                    time.sleep(2)
+                    
+                    scan_file = open('/home/pi/Desktop/ladybug/scandata.pkl', 'wb') #hardcode scan location
+                         
+                    pickle.dump(scan_params,scan_file) #working!
+                    scan_file.close()
+                    
+                    print('restarting sorryyyyyy')
+                        
+                    restart()
+                        
+        except subprocess.TimeoutExpired: #does not catch USB UNPLUG. Catches if it takes too long because lag
+    
+            print ("{} failed :( ".format(name))
+            proc.terminate() #corrective measure?
+            continue #move on. In true loop, it keeps trying the same picture since it shouldn't matter which one
+
+            
         
     #QuitCamera()
-    print ('scan completed successfully after {} seconds! {} images taken'.format(time.strftime("%H:%M:%S", time.gmtime(time.time() - start_time)), str(num_pictures)))
+    print ('scan completed successfully after {} seconds! {} images taken and {} restarts'.format(time.strftime("%H:%M:%S", time.gmtime(time.time() - start_time)), str(original_pics),str(num_failures)))
+    os.rename('/home/pi/Desktop/ladybug/scandata.pkl','/home/pi/Desktop/ladybug/scandataold.pkl') #quick fix to avoid infinite loop while still being able to analyze
     for i in range(5):
         GPIO.output(BEEP,GPIO.HIGH)
-        time.sleep(0.5)
+        time.sleep(0.2)
         GPIO.output(BEEP,GPIO.LOW)
+
     
 def XRepeatTest(num_trials=100):
     
@@ -1037,25 +1106,40 @@ SLabel._repeat_freq = 10
 SLabel._repeat_on = True
 
 
-'''
-
-begin stuff for resuming scan if it failed. Note: might not open with gu
-
-Json file present?  if so:
-
-load json file
-
-HomeX()
-HomeY()
-HomeZ()
-
-GridScan(json'sdata)
+"""begin resume scan if failed"""
 
 
+try:
+    GPIO.output(BEEP,GPIO.HIGH)
+    time.sleep(0.2)
+    GPIO.output(BEEP,GPIO.LOW)
+    time.sleep(0.5)
+    GPIO.output(BEEP,GPIO.HIGH)
+    time.sleep(0.2)
+    GPIO.output(BEEP,GPIO.LOW)
 
-'''
+    
+    scan_file = open('/home/pi/Desktop/ladybug/scandata.pkl', 'rb')
+        
+    scan_params = pickle.load(scan_file)
+    scan_file.close()    
+            
+    HomeX()
+    HomeY()
+    HomeZ()
+    
+    locations = scan_params[0] #position data
+    conditions = scan_params[1] #save location, filetype, resolution, timeout, numfailures
+    
+    """because R has no endstop we have to set it to what it was in the scan"""
+    global GlobalR
+    GlobalR = conditions['R_Location']
+    
+    GridScan(locations,conditions)
+    
+except FileNotFoundError:
+        
+    print('no saved scan file found. doing nothing')
 
 
-
-#mainloop()
     
