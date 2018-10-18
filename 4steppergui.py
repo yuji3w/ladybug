@@ -199,6 +199,9 @@ def GridScan(ScanLocations,conditions='default'):
         num_failures = 0
         original_pics = len(XCoord)
         original_time = start_time
+        original_locations = ScanLocations
+        failed_pics=[]
+        failure_times=[]
         
     else:
         save_location = conditions['save_location']
@@ -206,8 +209,11 @@ def GridScan(ScanLocations,conditions='default'):
         resolution = conditions['resolution']
         timeallowed=0 #after one restart we don't bother trying to save scan
         num_failures=conditions['num_failures']
+        failed_pics=conditions['failed_pics']
+        failure_times=conditions['failure_times']
         original_pics=conditions['original_pics']
         original_time=conditions['original_time']
+        original_locations=conditions['original_locations']
         
     num_pictures = len(XCoord) #remaining, not originally
     NumberOfRotations = len(set(RCoord))
@@ -254,20 +260,21 @@ def GridScan(ScanLocations,conditions='default'):
         
         try:
             for w in range(3):
-                startpictime = time.time()
-        
+                
                 proc = subprocess.Popen(["fswebcam", "-r " + resolution, "--no-banner", folder + "/" + name, "-q"], stdout=subprocess.PIPE) #like check_call(infinite timeout)
                 output = proc.communicate(timeout=10)[0]
-                endpictime = time.time()
-        
-        
-                if endpictime - startpictime >0.2: #a real picture
-                    
-                    break
-                elif w <=1: #usb got unplugged effing #hell
+                
+                if os.path.isfile(folder + "/" + name): #better than checking time elapsed...
+                    if w > 0: #USB was restarted
+                        print ('Okay thanks bozo. Restarting with {}'.format(name))
+                        
+                    break #move on to next picture
+                
+                elif (w <= 1): #usb got unplugged effing #hell
                 
                     #attempt to catch USB from https://stackoverflow.com/questions/1335507/keyboard-input-with-timeout-in-python  
                     print('HEY BOZO THE USB GOT UNPLUGGED UNPLUG IT AND PLUG IT BACK IN WITHIN {} SECONDS OR WE REBOOT'.format(timeallowed))
+                    print('check if {} failed'.format(name))
                 
                     GPIO.output(BEEP,GPIO.HIGH) #beep and bibrate
                 
@@ -285,8 +292,20 @@ def GridScan(ScanLocations,conditions='default'):
                     
                     num_failures +=1
                     
-                    conditions = {'save_location':save_location, 'R_Location':int(RCoord[i]), 'filetype':filetype, 'resolution':resolution, 'num_failures':num_failures,'original_pics':original_pics,'original_time':original_time} #after restart because no gui timeout after 0 seconds
+                    failed_pics.append(name)
+                    failure_times.append(time.time())
                     
+                    conditions = {'save_location':save_location,
+                                  'R_Location':int(RCoord[i]),
+                                  'filetype':filetype,
+                                  'resolution':resolution,
+                                  'num_failures':num_failures,
+                                  'original_pics':original_pics,
+                                  'original_time':original_time,
+                                  'original_locations':original_locations,
+                                  'failed_pics':failed_pics,
+                                  'failure_times':failure_times} #after restart because no gui timeout after 0 seconds
+                        
                     scan_params = [UpdatedScanLocations,conditions]
                     print(scan_params)
                     time.sleep(2)
@@ -308,15 +327,18 @@ def GridScan(ScanLocations,conditions='default'):
 
             
         
-    #QuitCamera()
-    print ('scan completed successfully after {} seconds! {} images taken and {} restarts'.format(time.strftime("%H:%M:%S", time.gmtime(time.time() - start_time)), str(original_pics),str(num_failures)))
-    os.rename('/home/pi/Desktop/ladybug/scandata.pkl','/home/pi/Desktop/ladybug/scandataold.pkl') #quick fix to avoid infinite loop while still being able to analyze
+    print ('scan completed successfully after {} seconds! {} images taken and {} restarts'.format(time.strftime("%H:%M:%S", time.gmtime(time.time() - original_time)), str(original_pics),str(num_failures)))
+    try:
+        os.rename('/home/pi/Desktop/ladybug/scandata.pkl','/home/pi/Desktop/ladybug/scandataold.pkl') #quick fix to avoid infinite loop while still being able to analyze
+    except FileNotFoundError:
+        print('nooooooo failures! woo')
+    
     for i in range(5):
         GPIO.output(BEEP,GPIO.HIGH)
         time.sleep(0.2)
         GPIO.output(BEEP,GPIO.LOW)
 
-    
+    a = input('press any key to exit')
 def XRepeatTest(num_trials=100):
     
     HomeX()
