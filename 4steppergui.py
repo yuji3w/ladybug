@@ -35,7 +35,7 @@ ZScanStep = 500
 RScanNumber = 1
 
 FactorsOf160 = [1,2,4,5,8,10,16,20,32,40,80,160] #for drop down menu of rotations of R
-
+defaultscan = [0,400,0,400,0,0,0,0,100,100,1,1] #for debugging to generate from define scan
 
 YDIR = 26 #SAMPLE
 XDIR = 18 #CAMERA
@@ -53,7 +53,7 @@ XMax = 1800 #max range. Affected by choice of sled
 YMax = 1800
 StepsPerRotation = 160 #for 8th microstepping on the R axis we have
 
-XLimit = 7 #limit switch pin input
+XLimit = 5 #limit switch pin input
 YLimit = 13
 ZLimit = 15 #optical switch. Goes low but there is a transition over a few microsteps
 
@@ -188,7 +188,7 @@ def GridScan(ScanLocations,conditions='default'):
     """Note that we have already added 1 in the DefineScan to account for half intervals"""
     
     
-    """conditions will contain save location, filetype, resolution. num_failures. First time running default
+    """conditions will contain save location, filetype, resolution. num_failures and others. First time running default
     is passed which contains standard conditions, but you can always specify it if you want to."""
     
     if conditions == 'default':
@@ -221,12 +221,7 @@ def GridScan(ScanLocations,conditions='default'):
     
     print("Stepping {} per image".format(str(StepsPerRotation))) #just for debugging
     print("has failed and restarted {} times so far".format(str(num_failures)))
-    
-    XGoTo(int(XCoord[0]))
-    YGoTo(int(YCoord[0]))
-    ZGoTo(int(ZCoord[0]))
-    #RGoTo(int(RCoord[0]))
-    
+
     
         
     for i in range(num_pictures):
@@ -234,7 +229,7 @@ def GridScan(ScanLocations,conditions='default'):
         if i % 100 == 0: #every 100 pics
             print("{} of {} pictures remaining".format((num_pictures-i),original_pics))
             GPIO.output(BEEP,GPIO.HIGH)
-            time.sleep(0.3)
+            time.sleep(0.1)
             GPIO.output(BEEP,GPIO.LOW)
         
         folder = save_location + "/Z" + str(ZCoord[i]).zfill(4) + "R" + str(RCoord[i]).zfill(3) #will make new folder on each change in Z or R
@@ -247,7 +242,7 @@ def GridScan(ScanLocations,conditions='default'):
         XGoTo(int(XCoord[i]))
         YGoTo(int(YCoord[i]))
         ZGoTo(int(ZCoord[i]))
-        #RGoTo(int(RCoord[i]))
+        RGoTo(int(RCoord[i]))
             
         time.sleep(0.1) #vibration control.
                 
@@ -255,11 +250,11 @@ def GridScan(ScanLocations,conditions='default'):
             
             
         name = "X" + str(XCoord[i]).zfill(4) + "Y" + str(YCoord[i]).zfill(4) + "Z" + str(ZCoord[i]).zfill(4) + "R" + str(RCoord[i]).zfill(3) + "of" + str(NumberOfRotations).zfill(3) + filetype
-
+        print(name)
         """begin filesaving block"""
         
         try:
-            for w in range(3):
+            for w in range(3): #Waiting for user input too hard --- this just prompts x times and checks if USB plugged in in between
                 
                 proc = subprocess.Popen(["fswebcam", "-r " + resolution, "--no-banner", folder + "/" + name, "-q"], stdout=subprocess.PIPE) #like check_call(infinite timeout)
                 output = proc.communicate(timeout=10)[0]
@@ -272,7 +267,7 @@ def GridScan(ScanLocations,conditions='default'):
                 
                 elif (w <= 1): #usb got unplugged effing #hell
                 
-                    #attempt to catch USB from https://stackoverflow.com/questions/1335507/keyboard-input-with-timeout-in-python  
+                      
                     print('HEY BOZO THE USB GOT UNPLUGGED UNPLUG IT AND PLUG IT BACK IN WITHIN {} SECONDS OR WE REBOOT'.format(timeallowed))
                     print('check if {} failed'.format(name))
                 
@@ -307,8 +302,6 @@ def GridScan(ScanLocations,conditions='default'):
                                   'failure_times':failure_times} #after restart because no gui timeout after 0 seconds
                         
                     scan_params = [UpdatedScanLocations,conditions]
-                    print(scan_params)
-                    time.sleep(2)
                     
                     scan_file = open('/home/pi/Desktop/ladybug/scandata.pkl', 'wb') #hardcode scan location
                          
@@ -323,7 +316,7 @@ def GridScan(ScanLocations,conditions='default'):
     
             print ("{} failed :( ".format(name))
             proc.terminate() #corrective measure?
-            continue #move on. In true loop, it keeps trying the same picture since it shouldn't matter which one
+            continue #move on
 
             
         
@@ -513,13 +506,34 @@ def YGet(event):
 def MoveR(direction,numsteps,delay):
 
     GPIO.output(RDIR, direction)
-    global GlobalR
     
+    global GlobalR
+    if direction == 1: #totally arbitrary. We call this clockwise but it'll change if I switch the wires around
+        GlobalR += numsteps
+    else:
+        GlobalR -= numsteps
+    #RPosition.configure(text="R: "+str(GlobalR) + "/" +str(RMax))
+
     for i in range(numsteps):
         GPIO.output(RSTEP, GPIO.HIGH)
         time.sleep(delay)
         GPIO.output(RSTEP,GPIO.LOW)
+        
+def RGoTo(RDest):
+    """Calls MoveR appropriately. We are pretending we have a rotary encoder."""
+    global GlobalR
     
+    
+    if not isinstance(RDest,int):
+        return ('integers only dingus') #this is not good practice right
+    
+    distance = RDest - GlobalR
+    if distance > 0: #forward
+        MoveR(RFORWARD,distance,SLOWER)
+    else:
+        MoveR(RBACKWARD,abs(distance),SLOWER) 
+    
+
     #insert counting information here
         
 
@@ -546,7 +560,7 @@ def MoveZ(direction,numsteps,delay):
     ZPosition.configure(text="Z: "+str(GlobalZ) + "/3000")
 
 def ZGoTo(ZDest, ZMin=0, ZMax=3000):
-    """checks the place is valid and then calls MoveZ appropriately.
+    """checks the place is valid and tchechen calls MoveZ appropriately.
     At the home position there happens to be just about 2000 steps
     forward and 1000 steps back --- for 1 micron per step.
     
@@ -721,11 +735,11 @@ def MoveZUpSmall():
 
 def MoveRCWSmall():
     #cw when staring down at spindle or object
-    MoveR(RFORWARD, 8, SLOW)
+    MoveR(RFORWARD, 8, SLOWER)
     print("You rotated something clockwise a bit!")
     
 def MoveRCCWSmall(): #counterclockwise
-    MoveR(RBACKWARD, 8, SLOW)
+    MoveR(RBACKWARD, 8, SLOWER)
     print("You rotated something counterclockwise a bit!")
     
 def exitProgram():
@@ -1133,11 +1147,11 @@ SLabel._repeat_on = True
 
 try:
     GPIO.output(BEEP,GPIO.HIGH)
-    time.sleep(0.2)
+    time.sleep(0.1)
     GPIO.output(BEEP,GPIO.LOW)
-    time.sleep(0.5)
-    GPIO.output(BEEP,GPIO.HIGH)
     time.sleep(0.2)
+    GPIO.output(BEEP,GPIO.HIGH)
+    time.sleep(0.1)
     GPIO.output(BEEP,GPIO.LOW)
 
     
