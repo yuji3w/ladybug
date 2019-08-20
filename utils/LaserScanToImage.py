@@ -1,5 +1,5 @@
 #takes the PD results of a laser scan and the original positions
-#and turns that into an attempted greyscale image
+#and turns that into an attempted greyscale image 
 
 import pickle
 import os
