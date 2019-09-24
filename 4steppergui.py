@@ -13,6 +13,10 @@ import subprocess #For taking a picture with fswebcam
 import sys
 import select #for timeouts and buzzing when usb gets disconnect
 import pickle
+import Adafruit_ADS1x15
+
+adc = Adafruit_ADS1x15.ADS1115() #our analog input
+GAIN = 16  #1,2,4,68,16. We have a small collection area PD 
 
 GPIO.setmode(GPIO.BOARD)
 
@@ -35,9 +39,11 @@ ZScanStep = 500
 RScanNumber = 1
 
 FactorsOf160 = [1,2,4,5,8,10,16,20,32,40,80,160] #for drop down menu of rotations of R
-defaultscan = [0,400,0,400,0,0,0,0,100,100,1,1] #for debugging to generate from define scan
 
-YDIR = 26 #SAMPLE
+#PDIn = 7 #photodiode input pin
+
+ 
+YDIR = 26 #SAMPLE #change back to 26
 XDIR = 18 #CAMERA
 ZDIR = 40
 RDIR = 19 #for clock and counterclock
@@ -53,7 +59,7 @@ XMax = 1800 #max range. Affected by choice of sled
 YMax = 1800
 StepsPerRotation = 160 #for 8th microstepping on the R axis we have
 
-XLimit = 5 #limit switch pin input
+XLimit = 7 #limit switch pin input
 YLimit = 13
 ZLimit = 15 #optical switch. Goes low but there is a transition over a few microsteps
 
@@ -91,6 +97,7 @@ GPIO.setup(YLimit, GPIO.IN, pull_up_down=GPIO.PUD_UP) #sense pin for Y home swit
 GPIO.setup(XLimit, GPIO.IN, pull_up_down=GPIO.PUD_UP) #sense pin for X home switch
 GPIO.setup(ZLimit, GPIO.IN) #no pull up. Direct sense
 
+#GPIO.setup(PDIn, GPIO.IN)
 
 win = tk.Tk()
 myFont = tk.font.Font(family='Helvetica', size=12, weight='bold')
@@ -98,7 +105,34 @@ myBigFont = tk.font.Font(family='Helvetica', size=20,weight='bold')
 font.families()
 
 
-def restart():
+def AnalogGet(samples=1,Gain=GAIN): #returns differential analog output from photodiode
+    Analog_List = []
+    for i in range(samples): #maybe add hardcode delay. Helps variance problems, can be made to report standard deviation
+        Analog_Val = adc.read_adc_difference(3, gain=Gain)
+        Analog_List.append(Analog_Val)
+        
+    Analog_Mean = mean(Analog_List)
+    return Analog_Mean
+
+def FindLaserFocus(ZMin = 0, ZMax = 3000, StepSize = 1, Sample_Number = 5, GoToFocus = True):
+    """Moves Z axis through a range of values, finds the location with peak PD signal, and returns values"""
+    AnalogList = [] #values
+    ZList = [] #we'll save which ones we queried
+    for i in range(ZMin,ZMax,StepSize):
+        ZGoTo(i)
+        AnalogList.append(AnalogGet(5)) #actual analog datapoint
+        ZList.append(i)
+        
+    AnalogPeak = max(AnalogList)# note that if you actually look at the data, there tends to be 20 microns in each direction of ogood signaol
+    
+    ZPeak = ZList[AnalogList.index(AnalogPeak)] #Zlocation of peak
+    
+    if GoToFocus: #change Z value to location of highest focus
+        ZGoTo(ZPeak)
+        
+    return AnalogPeak,ZPeak
+
+def restart(): #restart pi
     command = "/usr/bin/sudo /sbin/shutdown -r now"
     process = subprocess.Popen(command.split(), stdout=subprocess.PIPE)
     output = process.communicate()[0]
@@ -175,6 +209,70 @@ def DefineScan(XMin, XMax, YMin, YMax, ZMin, ZMax, RMin, RMax, XSteps=100, YStep
     ScanLocations = {'X':NewNewXScan,'Y':NewNewYScan,'Z':NewNewZScan,'R':NewNewRScan}
     return(ScanLocations)
 
+def LaserScan(ScanLocations, Adjust_Z=True, Sample_Number = 5, Z_Tolerance=20):
+    #goes to each location in scan locations and saves the analog PD output into a list.
+    #I envision this as being a subroutine within grid scan as the "take a picture".
+    #unlikely to use rotation but keeping it so we don't have to change anything.
+    #optional parameter uses find focus algorithm to adjust Z axis on the fly (future voice coils) 
+    
+    XCoord = ScanLocations['X']
+    YCoord = ScanLocations['Y']
+    ZCoord = ScanLocations['Z']
+    RCoord = ScanLocations['R']
+    
+    num_pictures = len(XCoord) #remaining, not originally
+    NumberOfRotations = len(set(RCoord))
+    stepsPerRotation = ((max(RCoord)-min(RCoord))/len(set(RCoord)))
+    
+    XGoTo(int(XCoord[0]))
+    YGoTo(int(YCoord[0]))
+    if not Adjust_Z:
+        
+        ZGoTo(int(ZCoord[0]))
+    else:
+        Analog_Peak,Z_Peak = FindLaserFocus(2000,3000,5) #skips each 2 to just get in right area. #switch to 0-3k after testing
+    #RGoTo(int(RCoord[0]))
+
+    DigitalList = [] #list contains 1 and 0 outputs of PD at each loc
+    for i in range(num_pictures):
+        
+        if i % 100 == 0: #every 100 pics
+            print("laser scan {}% done".format((i*100/num_pictures)))
+            GPIO.output(BEEP,GPIO.HIGH)
+            time.sleep(0.1)
+            GPIO.output(BEEP,GPIO.LOW)
+        
+        XGoTo(int(XCoord[i]))
+        YGoTo(int(YCoord[i]))
+        #RGoTo(int(RCoord[i]))
+
+        time.sleep(0.1)
+        if not Adjust_Z:
+            ZGoTo(int(ZCoord[i]))
+                
+            DigitalList.append(AnalogGet(Sample_Number)) #differential output comparing PD voltage source to PD output
+        else:
+            Analog_Peak, Z_Peak = FindLaserFocus((Z_Peak-Z_Tolerance),(Z_Peak+Z_Tolerance),1,Sample_Number) ##note might fail if peak around max end of Z range
+
+            ZCoord[i] = Z_Peak
+            DigitalList.append(Analog_Peak)
+                
+        
+    
+    #go to initial position for easy scan repeat
+    XGoTo(int(XCoord[0]))
+    YGoTo(int(YCoord[0]))
+    ZGoTo(int(ZCoord[0]))
+    #RGoTo(int(RCoord[0]))
+    
+    ScanResults = [[XCoord],[YCoord],[DigitalList]] #just to simplify handling. dump to pickle 
+    
+    scan_file = open('/home/pi/Desktop/ladybug/laserresults.pkl', 'wb') 
+                         
+    pickle.dump(ScanResults,scan_file) #working!
+    scan_file.close()
+                    
+    return(ScanResults)
 
 def GridScan(ScanLocations,conditions='default'):
      
@@ -188,7 +286,7 @@ def GridScan(ScanLocations,conditions='default'):
     """Note that we have already added 1 in the DefineScan to account for half intervals"""
     
     
-    """conditions will contain save location, filetype, resolution. num_failures and others. First time running default
+    """conditions will contain save location, filetype, resolution. num_failures. First time running default
     is passed which contains standard conditions, but you can always specify it if you want to."""
     
     if conditions == 'default':
@@ -221,7 +319,12 @@ def GridScan(ScanLocations,conditions='default'):
     
     print("Stepping {} per image".format(str(StepsPerRotation))) #just for debugging
     print("has failed and restarted {} times so far".format(str(num_failures)))
-
+    
+    XGoTo(int(XCoord[0]))
+    YGoTo(int(YCoord[0]))
+    ZGoTo(int(ZCoord[0]))
+    #RGoTo(int(RCoord[0]))
+    
     
         
     for i in range(num_pictures):
@@ -229,7 +332,7 @@ def GridScan(ScanLocations,conditions='default'):
         if i % 100 == 0: #every 100 pics
             print("{} of {} pictures remaining".format((num_pictures-i),original_pics))
             GPIO.output(BEEP,GPIO.HIGH)
-            time.sleep(0.1)
+            time.sleep(0.3)
             GPIO.output(BEEP,GPIO.LOW)
         
         folder = save_location + "/Z" + str(ZCoord[i]).zfill(4) + "R" + str(RCoord[i]).zfill(3) #will make new folder on each change in Z or R
@@ -242,7 +345,7 @@ def GridScan(ScanLocations,conditions='default'):
         XGoTo(int(XCoord[i]))
         YGoTo(int(YCoord[i]))
         ZGoTo(int(ZCoord[i]))
-        RGoTo(int(RCoord[i]))
+        #RGoTo(int(RCoord[i]))
             
         time.sleep(0.1) #vibration control.
                 
@@ -250,11 +353,11 @@ def GridScan(ScanLocations,conditions='default'):
             
             
         name = "X" + str(XCoord[i]).zfill(4) + "Y" + str(YCoord[i]).zfill(4) + "Z" + str(ZCoord[i]).zfill(4) + "R" + str(RCoord[i]).zfill(3) + "of" + str(NumberOfRotations).zfill(3) + filetype
-        print(name)
+
         """begin filesaving block"""
         
         try:
-            for w in range(3): #Waiting for user input too hard --- this just prompts x times and checks if USB plugged in in between
+            for w in range(3):
                 
                 proc = subprocess.Popen(["fswebcam", "-r " + resolution, "--no-banner", folder + "/" + name, "-q"], stdout=subprocess.PIPE) #like check_call(infinite timeout)
                 output = proc.communicate(timeout=10)[0]
@@ -267,7 +370,7 @@ def GridScan(ScanLocations,conditions='default'):
                 
                 elif (w <= 1): #usb got unplugged effing #hell
                 
-                      
+                    #attempt to catch USB from https://stackoverflow.com/questions/1335507/keyboard-input-with-timeout-in-python  
                     print('HEY BOZO THE USB GOT UNPLUGGED UNPLUG IT AND PLUG IT BACK IN WITHIN {} SECONDS OR WE REBOOT'.format(timeallowed))
                     print('check if {} failed'.format(name))
                 
@@ -302,6 +405,8 @@ def GridScan(ScanLocations,conditions='default'):
                                   'failure_times':failure_times} #after restart because no gui timeout after 0 seconds
                         
                     scan_params = [UpdatedScanLocations,conditions]
+                    print(scan_params)
+                    time.sleep(2)
                     
                     scan_file = open('/home/pi/Desktop/ladybug/scandata.pkl', 'wb') #hardcode scan location
                          
@@ -316,7 +421,7 @@ def GridScan(ScanLocations,conditions='default'):
     
             print ("{} failed :( ".format(name))
             proc.terminate() #corrective measure?
-            continue #move on
+            continue #move on. In true loop, it keeps trying the same picture since it shouldn't matter which one
 
             
         
@@ -506,34 +611,13 @@ def YGet(event):
 def MoveR(direction,numsteps,delay):
 
     GPIO.output(RDIR, direction)
-    
     global GlobalR
-    if direction == 1: #totally arbitrary. We call this clockwise but it'll change if I switch the wires around
-        GlobalR += numsteps
-    else:
-        GlobalR -= numsteps
-    #RPosition.configure(text="R: "+str(GlobalR) + "/" +str(RMax))
-
+    
     for i in range(numsteps):
         GPIO.output(RSTEP, GPIO.HIGH)
         time.sleep(delay)
         GPIO.output(RSTEP,GPIO.LOW)
-        
-def RGoTo(RDest):
-    """Calls MoveR appropriately. We are pretending we have a rotary encoder."""
-    global GlobalR
     
-    
-    if not isinstance(RDest,int):
-        return ('integers only dingus') #this is not good practice right
-    
-    distance = RDest - GlobalR
-    if distance > 0: #forward
-        MoveR(RFORWARD,distance,SLOWER)
-    else:
-        MoveR(RBACKWARD,abs(distance),SLOWER) 
-    
-
     #insert counting information here
         
 
@@ -560,7 +644,7 @@ def MoveZ(direction,numsteps,delay):
     ZPosition.configure(text="Z: "+str(GlobalZ) + "/3000")
 
 def ZGoTo(ZDest, ZMin=0, ZMax=3000):
-    """checks the place is valid and tchechen calls MoveZ appropriately.
+    """checks the place is valid and then calls MoveZ appropriately.
     At the home position there happens to be just about 2000 steps
     forward and 1000 steps back --- for 1 micron per step.
     
@@ -722,7 +806,7 @@ def MoveZDownBig(): #dir dis delay
     print("Z moved down a lot!")
     
 def MoveZDownSmall():
-    MoveZ(ZBACKWARD,50,FAST)
+    MoveZ(ZBACKWARD,25,FAST)
     print("Z moved down a little!")
 
 def MoveZUpBig():
@@ -730,16 +814,16 @@ def MoveZUpBig():
     print("Z moved up a lot!")
     
 def MoveZUpSmall():
-    MoveZ(ZFORWARD,50,FAST)
+    MoveZ(ZFORWARD,25,FAST)
     print("Z moved up a little!")
 
 def MoveRCWSmall():
     #cw when staring down at spindle or object
-    MoveR(RFORWARD, 8, SLOWER)
+    MoveR(RFORWARD, 8, SLOW)
     print("You rotated something clockwise a bit!")
     
 def MoveRCCWSmall(): #counterclockwise
-    MoveR(RBACKWARD, 8, SLOWER)
+    MoveR(RBACKWARD, 8, SLOW)
     print("You rotated something counterclockwise a bit!")
     
 def exitProgram():
@@ -857,7 +941,7 @@ def DownStop(*event):
         DownLabel._repeat_on = True
 
 def AStep(*event): #note actual lowercase. FOr clock and counterclockwise rotation
-    print('A')
+    MoveRCCWSmall()
 
     if ALabel._repeat_on:
         win.after(ALabel._repeat_freq, AStep)
@@ -870,7 +954,7 @@ def AStop(*event):
         ALabel._repeat_on = True
 
 def DStep(*event): #note actual lowercase. FOr clock and counterclockwise rotation
-    print('D')
+    MoveRCWSmall()
 
     if DLabel._repeat_on:
         win.after(DLabel._repeat_freq, DStep)
@@ -883,7 +967,7 @@ def DStop(*event):
         DLabel._repeat_on = True
 
 def WStep(*event): #note actual lowercase. For Z AXIS W and S
-    print('W')
+    MoveZUpSmall()
 
     if WLabel._repeat_on:
         win.after(WLabel._repeat_freq, WStep)
@@ -896,7 +980,7 @@ def WStop(*event):
         WLabel._repeat_on = True
 
 def SStep(*event): #note actual lowercase. For Z AXIS S and S
-    print('S')
+    MoveZDownSmall()
 
     if SLabel._repeat_on:
         win.after(SLabel._repeat_freq, SStep)
@@ -1042,7 +1126,6 @@ XEntry = tk.Entry(LeftFrame, width = 4)
 XEntry.bind('<Return>', XGet)
 XEntry.pack(side=tk.LEFT)
 
-
 XLeftBigButton = tk.Button(LeftFrame, text = "⟸", font = myFont, command = MoveXLeftBig, height = 1, width =2 )
 XLeftBigButton.pack(side = tk.LEFT)
 
@@ -1108,6 +1191,10 @@ keypress_var = tk.IntVar() #1 if button is pressed
 keypress_button = tk.Checkbutton(SecondaryBottomFrame, text="ENABLE KEYBOARD CONTROLS", variable=keypress_var, command=allow_keypress)
 keypress_button.pack(side = tk.RIGHT)
 
+#Display analog value of PD
+AnalogValue = tk.Label(SecondaryBottomFrame, font=(myFont), height = 2, width=12)
+AnalogValue.after(1000, AnalogGet)
+AnalogValue.pack(side = tk.TOP)
 
 LeftLabel = tk.Label(win)
 LeftLabel._repeat_freq = int(SLOW*1000*10) #holding Down key, milisecond per repeat.. Delay should be how long it actually takes to move
@@ -1126,19 +1213,19 @@ DownLabel._repeat_freq = int(SLOW*1000*10)
 DownLabel._repeat_on = True
 
 ALabel = tk.Label(win) #a nd d are rotation
-ALabel._repeat_freq = 10  
+ALabel._repeat_freq = int(SLOW*1000*10)  
 ALabel._repeat_on = True
 
 DLabel = tk.Label(win)
-DLabel._repeat_freq = 10  
+DLabel._repeat_freq = int(SLOW*1000*10)  
 DLabel._repeat_on = True
 
 WLabel = tk.Label(win)
-WLabel._repeat_freq = 10  
+WLabel._repeat_freq = int(SLOW*1000*10)  
 WLabel._repeat_on = True
 
 SLabel = tk.Label(win)
-SLabel._repeat_freq = 10  
+SLabel._repeat_freq = int(SLOW*1000*10)  
 SLabel._repeat_on = True
 
 
@@ -1153,6 +1240,8 @@ try:
     GPIO.output(BEEP,GPIO.HIGH)
     time.sleep(0.1)
     GPIO.output(BEEP,GPIO.LOW)
+    
+    LaserTest = DefineScan(1100,1300,600,800,0,0,0,0,20,20) #placed in a random location so it will get lost
 
     
     scan_file = open('/home/pi/Desktop/ladybug/scandata.pkl', 'rb')
@@ -1168,7 +1257,7 @@ try:
     conditions = scan_params[1] #save location, filetype, resolution, timeout, numfailures
     
     """because R has no endstop we have to set it to what it was in the scan"""
-    global GlobalR
+    #global GlobalR #I'm not sure why this causes a syntax error, it wasn'tbefore. 
     GlobalR = conditions['R_Location']
     
     GridScan(locations,conditions)
