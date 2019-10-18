@@ -55,13 +55,17 @@ RSTEP = 23
 
 BEEP = 33 #GPIO pin to beep for pleasing yujie
 
-XMax = 1800 #max range. Affected by choice of sled
-YMax = 1800
+#FOR FLASHFORGE FINDER WITH KES400A and original bed
+
+XMax = 9000 #max range. Affected by choice of sled
+YMax = 6800
+ZMax = 29000 #my goodness. Approximate, want to be conservative to not crush my voice coils.
+
 StepsPerRotation = 160 #for 8th microstepping on the R axis we have
 
-XLimit = 7 #limit switch pin input
-YLimit = 13
-ZLimit = 15 #optical switch. Goes low but there is a transition over a few microsteps
+XLimit = 8 #limit switch pin input
+YLimit = 10
+ZLimit = 12 #optical switch. Goes low but there is a transition over a few microsteps
 
 XFORWARD = 1 #Arbitrary  
 XBACKWARD = 0   
@@ -95,7 +99,7 @@ GPIO.setup(RSTEP, GPIO.OUT)
 
 GPIO.setup(YLimit, GPIO.IN, pull_up_down=GPIO.PUD_UP) #sense pin for Y home switch
 GPIO.setup(XLimit, GPIO.IN, pull_up_down=GPIO.PUD_UP) #sense pin for X home switch
-GPIO.setup(ZLimit, GPIO.IN) #no pull up. Direct sense
+GPIO.setup(ZLimit, GPIO.IN, pull_up_down=GPIO.PUD_UP) 
 
 #GPIO.setup(PDIn, GPIO.IN)
 
@@ -629,7 +633,7 @@ def MoveZ(direction,numsteps,delay):
     
     GPIO.output(ZDIR, direction)
     global GlobalZ
-         
+    global ZMax     
     for i in range(numsteps):
             
         GPIO.output(ZSTEP, GPIO.HIGH)
@@ -641,16 +645,14 @@ def MoveZ(direction,numsteps,delay):
         GlobalZ += numsteps
     else:
         GlobalZ -= numsteps
-    ZPosition.configure(text="Z: "+str(GlobalZ) + "/3000")
+    ZPosition.configure(text="Z: "+str(GlobalZ) + "/" + str(ZMax))
 
-def ZGoTo(ZDest, ZMin=0, ZMax=3000):
+def ZGoTo(ZDest, ZMin=0):
     """checks the place is valid and then calls MoveZ appropriately.
-    At the home position there happens to be just about 2000 steps
-    forward and 1000 steps back --- for 1 micron per step.
-    
-    Reworked to start at 0 and end at 3000"""
+    """
     
     global GlobalZ
+    global ZMax
     if not isinstance(ZDest,int):
         return ('integers only dingus') #this is not good practice right
         
@@ -683,13 +685,13 @@ def CheckPress(PIN):
             
 def HomeX():
     global GlobalX
-    for i in range(2500): #some number that's noticably larger than the range, but also will eventually stop in case something goes wrong 
+    for i in range(XMax + 500): #some number that's noticably larger than the range, but also will eventually stop in case something goes wrong 
     
     #check if button is pressed
         
         
         if CheckPress(XLimit): #button pressed once. need to move forward and back again to ensure correct start position
-            MoveX(1,300,0.01) #move forward
+            MoveX(1,300,FASTER) #move forward
             for j in range(400): #move back and check again
                 if CheckPress(XLimit): #again
                     
@@ -705,13 +707,13 @@ def HomeX():
 
 def HomeY():
     global GlobalY
-    for i in range(2500): #some number that's noticably larger than the range, but also will eventually stop in case something goes wrong 
+    for i in range(YMax + 500): #some number that's noticably larger than the range, but also will eventually stop in case something goes wrong 
     
     #check if button is pressed
         
         
         if CheckPress(YLimit): #button pressed once. need to move forward and back again to ensure correct start position
-            MoveY(YFORWARD,300,SLOW) #move forward
+            MoveY(YFORWARD,300,FASTER) #move forward
             for j in range(400): #move back and check again
                 if CheckPress(YLimit): #again
                     
@@ -728,28 +730,27 @@ def HomeY():
 def HomeZ():
     global GlobalZ
     
-    for i in range(2500): #some number that's noticably larger than the range, but also will eventually stop in case something goes wrong 
+    for i in range(ZMax + 500): #some number that's noticably larger than the range, but also will eventually stop in case something goes wrong 
     
     #check if button is pressed
         
     
         if CheckPress(ZLimit): #button pressed once. need to move forward and back again to ensure correct start position
-            MoveZ(ZFORWARD,1200,FAST) #move forward -- at least 1k b/c neg range
-            for j in range(1400): #move back and check again
+            MoveZ(ZFORWARD,300,FAST) #move forward -- at least 1k b/c neg range
+            for j in range(400): #move back and check again
                 if CheckPress(ZLimit): #again
                     
-                    MoveZ(ZBACKWARD, 1000, FAST) #START AT MINIMUM RANGE for easier calculating
 
-                    print('Optical switch has been tripped after {} steps!'.format(i))
-                    print('was already homed check: took {} out of 1200 steps on the second bounce'.format(j))
+                    print('Z switch has been tripped after {} steps!'.format(i))
+                    print('was already homed check: took {} out of 300 steps on the second bounce'.format(j))
                     
                     
                     GlobalZ = 0
-                    ZPosition.configure(text="Z: "+str(GlobalZ) + "/3000")
+                    ZPosition.configure(text="Z: "+str(GlobalZ) + "/" + str(ZMax))
                     return (i) #break away essentially
                 MoveZ(ZBACKWARD,1,FAST)
             #do stepping protocol (second in case button already pressed)
-        MoveZ(ZBACKWARD,1,FAST)#dir dis delay  
+        MoveZ(ZBACKWARD,1,FASTERER)#dir dis delay  
 
 
 
