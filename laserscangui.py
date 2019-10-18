@@ -13,9 +13,9 @@ import subprocess #For taking a picture with fswebcam
 import sys
 import select #for timeouts and buzzing when usb gets disconnect
 import pickle
-import Adafruit_ADS1x15
+#import Adafruit_ADS1x15
 
-adc = Adafruit_ADS1x15.ADS1115() #our analog input
+#adc = Adafruit_ADS1x15.ADS1115() #our analog input
 GAIN = 16  #1,2,4,68,16. We have a small collection area PD 
 
 GPIO.setmode(GPIO.BOARD)
@@ -749,21 +749,8 @@ def HomeZ():
                     return (i) #break away essentially
                 MoveZ(ZBACKWARD,1,FAST)
             #do stepping protocol (second in case button already pressed)
-        MoveZ(ZBACKWARD,1,FAST)#dir dis delay
+        MoveZ(ZBACKWARD,1,FAST)#dir dis delay  
 
-def GuiScan():
-    
-    
-    
-    GridScan(XScanMin,XScanMax,YScanMin,YScanMax,ZScanMin,ZScanMax,XScanStep,YScanStep,ZScanStep,RScanNumber)
-    
-
-def SetR():
-    #gets entry from dropdown for rotations and passes to global variable 
-    global RScanNumber
-    RScanNumber = int(RSetVar.get())
-    print ('viewing {} points of view'.format(str(RScanNumber)))
-    
 
 
 def MoveXLeftBig(): #dir distance delay
@@ -833,226 +820,6 @@ def exitProgram():
 
 #BUTTONS FOR SETTING SCAN PARAMETERS
 
-def SetXLowerBound():
-    global XScanMin
-    XScanMin = GlobalX
-    print("Lower Boundary for X Scan has been set to {}".format(XScanMin))
-
-def SetXUpperBound():
-    global XScanMax
-    XScanMax = GlobalX
-    print("Upper Boundary for X Scan has been set to {}".format(XScanMax))
-
-
-def SetYLowerBound():
-    global YScanMin
-    YScanMin = GlobalY
-    print("Lower Boundary for Y Scan has been set to {}".format(YScanMin))
-
-def SetYUpperBound():
-    global YScanMax
-    YScanMax = GlobalY
-    print("Upper Boundary for Y Scan has been set to {}".format(YScanMax))
-
-def SetZLowerBound():
-    #sets Z bound to whatever global Z is
-    global ZScanMin
-    ZScanMin = GlobalZ
-    print("Lower Boundary for Z Scan has been set to {}".format(ZScanMin))
-
-def SetZUpperBound():
-    global ZScanMax
-    ZScanMax = GlobalZ
-    print("Upper Boundary for Z Scan has been set to {}".format(ZScanMax))
-
-def SetZStep():
-    global ZScanStep
-    ZScanStep = GlobalZ #Yes I know I should be shot but this makes it more minimal
-    print("Step size for Z has been set to {}".format(ZScanStep))
-
-def SetXStep():
-    global XScanStep
-    XScanStep = GlobalX
-    print("Step size for X has been set to {}".format(YScanStep))
-    
-def SetYStep():
-    global YScanStep
-    YScanStep = GlobalY
-    print("Step size for Y has been set to {}".format(YScanStep))
-
-#Begin disgusting block of instructions for keypress. Complicated by fact we want to be able to hold Down.
-#Modified from https://stackoverflow.com/questions/12994796/how-can-i-control-keyboard-repeat-delay-in-a-tkinter-root-window
-#main changes are not displaying the Label and also only enabling key control when checkbox is checked (allow_keypress)
-
-
-def LeftStep(*event): #X
-    MoveYForwardSmall()
-    #pyrint('Left')
-
-    if LeftLabel._repeat_on:
-        win.after(LeftLabel._repeat_freq, LeftStep)
-
-def LeftStop(*event):
-    if LeftLabel._repeat_on:
-        LeftLabel._repeat_on = False
-        win.after(LeftLabel._repeat_freq + 1, LeftStop)
-    else:
-        LeftLabel._repeat_on = True
-
-
-def RightStep(*event):
-    MoveYBackSmall()
-
-    if RightLabel._repeat_on:
-        win.after(RightLabel._repeat_freq, RightStep)
-
-def RightStop(*event):
-    if RightLabel._repeat_on:
-        RightLabel._repeat_on = False
-        win.after(RightLabel._repeat_freq + 1, RightStop)
-    else:
-        RightLabel._repeat_on = True
-
-
-def UpStep(*event):
-    MoveXLeftSmall()
-
-    if UpLabel._repeat_on:
-        win.after(UpLabel._repeat_freq, UpStep)
-
-def UpStop(*event):
-    if UpLabel._repeat_on:
-        UpLabel._repeat_on = False
-        win.after(UpLabel._repeat_freq + 1, UpStop)
-    else:
-        UpLabel._repeat_on = True
-
-def DownStep(*event):
-    MoveXRightSmall()
-
-    if DownLabel._repeat_on:
-        win.after(DownLabel._repeat_freq, DownStep)
-
-def DownStop(*event):
-    if DownLabel._repeat_on:
-        DownLabel._repeat_on = False
-        win.after(DownLabel._repeat_freq + 1, DownStop)
-    else:
-        DownLabel._repeat_on = True
-
-def AStep(*event): #note actual lowercase. FOr clock and counterclockwise rotation
-    MoveRCCWSmall()
-
-    if ALabel._repeat_on:
-        win.after(ALabel._repeat_freq, AStep)
-
-def AStop(*event):
-    if ALabel._repeat_on:
-        ALabel._repeat_on = False
-        win.after(ALabel._repeat_freq + 1, AStop)
-    else:
-        ALabel._repeat_on = True
-
-def DStep(*event): #note actual lowercase. FOr clock and counterclockwise rotation
-    MoveRCWSmall()
-
-    if DLabel._repeat_on:
-        win.after(DLabel._repeat_freq, DStep)
-
-def DStop(*event):
-    if DLabel._repeat_on:
-        DLabel._repeat_on = False
-        win.after(DLabel._repeat_freq + 1, DStop)
-    else:
-        DLabel._repeat_on = True
-
-def WStep(*event): #note actual lowercase. For Z AXIS W and S
-    MoveZUpSmall()
-
-    if WLabel._repeat_on:
-        win.after(WLabel._repeat_freq, WStep)
-
-def WStop(*event):
-    if WLabel._repeat_on:
-        WLabel._repeat_on = False
-        win.after(WLabel._repeat_freq + 1, WStop)
-    else:
-        WLabel._repeat_on = True
-
-def SStep(*event): #note actual lowercase. For Z AXIS S and S
-    MoveZDownSmall()
-
-    if SLabel._repeat_on:
-        win.after(SLabel._repeat_freq, SStep)
-
-def SStop(*event):
-    if SLabel._repeat_on:
-        SLabel._repeat_on = False
-        win.after(SLabel._repeat_freq + 1, SStop)
-    else:
-        SLabel._repeat_on = True
-
-
-def allow_keypress():
-    #Checks if button is presed, if so, allows keycontrol
-    
-    if keypress_var.get(): #I can't believe this works. Button is pressed
-        
-        
-        global Leftbound
-        global Leftunbound
-        global Rightbound
-        global Rightunbound
-        global Upbound
-        global Upunbound
-        global Downbound
-        global Downunbound
-        global Abound
-        global Aunbound
-        global Dbound
-        global Dunbound
-        global Wbound
-        global Wunbound
-        global Sbound
-        global Sunbound
-        
-        
-        
-        
-        Leftbound = win.bind('<KeyPress-Left>', LeftStep)
-        Leftunbound = win.bind('<KeyRelease-Left>', LeftStop)
-        Rightbound = win.bind('<KeyPress-Right>', RightStep)
-        Rightunbound = win.bind('<KeyRelease-Right>', RightStop)
-        Upbound = win.bind('<KeyPress-Up>', UpStep)
-        Upunbound = win.bind('<KeyRelease-Up>', UpStop)
-        Downbound = win.bind('<KeyPress-Down>', DownStep)
-        Downunbound = win.bind('<KeyRelease-Down>', DownStop)
-        Abound = win.bind('<KeyPress-a>', AStep)
-        Aunbound = win.bind('<KeyRelease-a>', AStop)
-        Dbound = win.bind('<KeyPress-d>', DStep)
-        Dunbound = win.bind('<KeyRelease-d>', DStop)
-        Wbound = win.bind('<KeyPress-w>', WStep)
-        Wunbound = win.bind('<KeyRelease-w>', WStop)
-        Sbound = win.bind('<KeyPress-s>', SStep)
-        Sunbound = win.bind('<KeyRelease-s>', SStop)
-        
-    else:
-        win.unbind('<KeyPress-Left>', Leftbound)
-        win.unbind('<KeyRelease-Left>', Leftunbound)
-        win.unbind('<KeyPress-Right>', Rightbound)
-        win.unbind('<KeyRelease-Right>', Rightunbound)
-        win.unbind('<KeyPress-Up>', Upbound)
-        win.unbind('<KeyRelease-Up>', Upunbound)
-        win.unbind('<KeyPress-Down>', Downbound)
-        win.unbind('<KeyRelease-Down>', Downunbound)
-        win.unbind('<KeyPress-a>', Abound)
-        win.unbind('<KeyRelease-a>', Aunbound)   
-        win.unbind('<KeyPress-d>', Dbound)
-        win.unbind('<KeyRelease-d>', Dunbound)   
-        win.unbind('<KeyPress-w>', Wbound)
-        win.unbind('<KeyRelease-w>', Wunbound)   
-        win.unbind('<KeyPress-s>', Sbound)
-        win.unbind('<KeyRelease-s>', Sunbound)
 
 #BEGIN WHAT GOES ONSCREEN
 
@@ -1070,32 +837,6 @@ TopFrame.pack(side = tk.TOP)
 
 BottomFrame = tk.Frame(win)
 BottomFrame.pack(side = tk.BOTTOM)
-
-XStepButton = tk.Button(LeftFrame, text = "Set XScan Stepsize ", font = myFont, command = SetXStep, height = 1, width =20 )
-XStepButton.pack(side = tk.TOP, pady=5)
-XLowerBoundButton = tk.Button(LeftFrame, text = "Set XScan Min", font = myFont, command = SetXLowerBound, height = 1, width =20 )
-XLowerBoundButton.pack(side = tk.TOP, pady=5)
-XUpperBoundButton = tk.Button(LeftFrame, text = "Set XScan Max", font = myFont, command = SetXUpperBound, height = 1, width =20 )
-XUpperBoundButton.pack(side = tk.TOP, pady=5)
-
-YStepButton = tk.Button(TopFrame, text = "Set YScan Stepsize ", font = myFont, command = SetYStep, height = 1, width =20 )
-YStepButton.pack(side = tk.BOTTOM, pady=5)
-YUpperBoundButton = tk.Button(TopFrame, text = "Set YScan Max ", font = myFont, command = SetYUpperBound, height = 1, width =20 )
-YUpperBoundButton.pack(side = tk.BOTTOM, pady=5)
-YLowerBoundButton = tk.Button(TopFrame, text = "Set YScan Min ", font = myFont, command = SetYLowerBound, height = 1, width =20 )
-YLowerBoundButton.pack(side = tk.BOTTOM, pady=5)
-
-
-
-
-ZStepButton = tk.Button(RightFrame, text = "Set ZScan Stepsize ", font = myFont, command = SetZStep, height = 1, width =20 )
-ZStepButton.pack(side = tk.TOP, pady=5)
-ZLowerBoundButton = tk.Button(RightFrame, text = "Set ZScan Min ", font = myFont, command = SetZLowerBound, height = 1, width =20 )
-ZLowerBoundButton.pack(side = tk.TOP, pady=5)
-ZUpperBoundButton = tk.Button(RightFrame, text = "Set ZScan Max ", font = myFont, command = SetZUpperBound, height = 1, width =20 )
-ZUpperBoundButton.pack(side = tk.TOP, pady=5)
-
-
 
 YPosition = tk.Label(TopFrame, font=(myFont), height = 2, width=12) #use a Label widget, not Text
 YPosition.pack(side = tk.TOP)
@@ -1174,60 +915,13 @@ RCWSmallButton.pack(side = tk.BOTTOM, pady=5)
 RCCWSmallButton = tk.Button(BottomFrame, text = "↺", font = myBigFont, command = MoveRCCWSmall, height = 1, width = 2)
 RCCWSmallButton.pack(side = tk.BOTTOM,pady=5)
 
-ScanButton = tk.Button(BottomFrame, text = "SCAN!!!", font = myBigFont, command = GuiScan, height = 1, width = 20)
-ScanButton.pack(side = tk.TOP, pady=110)
-
 SecondaryBottomFrame = tk.Frame(BottomFrame)
 SecondaryBottomFrame.pack(side=tk.TOP)
-
-RSetVar = tk.StringVar(SecondaryBottomFrame) #holds contents of dropdown? 
-RSetVar.set(FactorsOf160[0])
-RSetButton = tk.Button(SecondaryBottomFrame, text = "Set number of rotations", font = myFont, command = SetR, height = 1, width = 20)
-RSetButton.pack(side = tk.LEFT, padx=5)
-RSetDropdown = tk.OptionMenu(SecondaryBottomFrame, RSetVar, *FactorsOf160)
-RSetDropdown.pack(side = tk.RIGHT, padx=5)
-
-keypress_var = tk.IntVar() #1 if button is pressed
-keypress_button = tk.Checkbutton(SecondaryBottomFrame, text="ENABLE KEYBOARD CONTROLS", variable=keypress_var, command=allow_keypress)
-keypress_button.pack(side = tk.RIGHT)
 
 #Display analog value of PD
 AnalogValue = tk.Label(SecondaryBottomFrame, font=(myFont), height = 2, width=12)
 AnalogValue.after(1000, AnalogGet)
 AnalogValue.pack(side = tk.TOP)
-
-LeftLabel = tk.Label(win)
-LeftLabel._repeat_freq = int(SLOW*1000*10) #holding Down key, milisecond per repeat.. Delay should be how long it actually takes to move
-LeftLabel._repeat_on = True
-
-RightLabel = tk.Label(win)
-RightLabel._repeat_freq = int(SLOW*1000*10) 
-RightLabel._repeat_on = True
-
-UpLabel = tk.Label(win)
-UpLabel._repeat_freq = int(SLOW*1000*10) 
-UpLabel._repeat_on = True
-
-DownLabel = tk.Label(win)
-DownLabel._repeat_freq = int(SLOW*1000*10)  
-DownLabel._repeat_on = True
-
-ALabel = tk.Label(win) #a nd d are rotation
-ALabel._repeat_freq = int(SLOW*1000*10)  
-ALabel._repeat_on = True
-
-DLabel = tk.Label(win)
-DLabel._repeat_freq = int(SLOW*1000*10)  
-DLabel._repeat_on = True
-
-WLabel = tk.Label(win)
-WLabel._repeat_freq = int(SLOW*1000*10)  
-WLabel._repeat_on = True
-
-SLabel = tk.Label(win)
-SLabel._repeat_freq = int(SLOW*1000*10)  
-SLabel._repeat_on = True
-
 
 """begin resume scan if failed"""
 
