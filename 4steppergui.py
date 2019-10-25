@@ -13,11 +13,8 @@ import subprocess #For taking a picture with fswebcam
 import sys
 import select #for timeouts and buzzing when usb gets disconnect
 import pickle
-import Adafruit_ADS1x15
 
-adc = Adafruit_ADS1x15.ADS1115() #our analog input
-GAIN = 16  #1,2,4,68,16. We have a small collection area PD 
-
+G
 GPIO.setmode(GPIO.BOARD)
 
 GlobalX = 0 #X distance from home in steps
@@ -105,32 +102,6 @@ myBigFont = tk.font.Font(family='Helvetica', size=20,weight='bold')
 font.families()
 
 
-def AnalogGet(samples=1,Gain=GAIN): #returns differential analog output from photodiode
-    Analog_List = []
-    for i in range(samples): #maybe add hardcode delay. Helps variance problems, can be made to report standard deviation
-        Analog_Val = adc.read_adc_difference(3, gain=Gain)
-        Analog_List.append(Analog_Val)
-        
-    Analog_Mean = mean(Analog_List)
-    return Analog_Mean
-
-def FindLaserFocus(ZMin = 0, ZMax = 3000, StepSize = 1, Sample_Number = 5, GoToFocus = True):
-    """Moves Z axis through a range of values, finds the location with peak PD signal, and returns values"""
-    AnalogList = [] #values
-    ZList = [] #we'll save which ones we queried
-    for i in range(ZMin,ZMax,StepSize):
-        ZGoTo(i)
-        AnalogList.append(AnalogGet(5)) #actual analog datapoint
-        ZList.append(i)
-        
-    AnalogPeak = max(AnalogList)# note that if you actually look at the data, there tends to be 20 microns in each direction of ogood signaol
-    
-    ZPeak = ZList[AnalogList.index(AnalogPeak)] #Zlocation of peak
-    
-    if GoToFocus: #change Z value to location of highest focus
-        ZGoTo(ZPeak)
-        
-    return AnalogPeak,ZPeak
 
 def restart(): #restart pi
     command = "/usr/bin/sudo /sbin/shutdown -r now"
@@ -209,70 +180,6 @@ def DefineScan(XMin, XMax, YMin, YMax, ZMin, ZMax, RMin, RMax, XSteps=100, YStep
     ScanLocations = {'X':NewNewXScan,'Y':NewNewYScan,'Z':NewNewZScan,'R':NewNewRScan}
     return(ScanLocations)
 
-def LaserScan(ScanLocations, Adjust_Z=True, Sample_Number = 5, Z_Tolerance=20):
-    #goes to each location in scan locations and saves the analog PD output into a list.
-    #I envision this as being a subroutine within grid scan as the "take a picture".
-    #unlikely to use rotation but keeping it so we don't have to change anything.
-    #optional parameter uses find focus algorithm to adjust Z axis on the fly (future voice coils) 
-    
-    XCoord = ScanLocations['X']
-    YCoord = ScanLocations['Y']
-    ZCoord = ScanLocations['Z']
-    RCoord = ScanLocations['R']
-    
-    num_pictures = len(XCoord) #remaining, not originally
-    NumberOfRotations = len(set(RCoord))
-    stepsPerRotation = ((max(RCoord)-min(RCoord))/len(set(RCoord)))
-    
-    XGoTo(int(XCoord[0]))
-    YGoTo(int(YCoord[0]))
-    if not Adjust_Z:
-        
-        ZGoTo(int(ZCoord[0]))
-    else:
-        Analog_Peak,Z_Peak = FindLaserFocus(2000,3000,5) #skips each 2 to just get in right area. #switch to 0-3k after testing
-    #RGoTo(int(RCoord[0]))
-
-    DigitalList = [] #list contains 1 and 0 outputs of PD at each loc
-    for i in range(num_pictures):
-        
-        if i % 100 == 0: #every 100 pics
-            print("laser scan {}% done".format((i*100/num_pictures)))
-            GPIO.output(BEEP,GPIO.HIGH)
-            time.sleep(0.1)
-            GPIO.output(BEEP,GPIO.LOW)
-        
-        XGoTo(int(XCoord[i]))
-        YGoTo(int(YCoord[i]))
-        #RGoTo(int(RCoord[i]))
-
-        time.sleep(0.1)
-        if not Adjust_Z:
-            ZGoTo(int(ZCoord[i]))
-                
-            DigitalList.append(AnalogGet(Sample_Number)) #differential output comparing PD voltage source to PD output
-        else:
-            Analog_Peak, Z_Peak = FindLaserFocus((Z_Peak-Z_Tolerance),(Z_Peak+Z_Tolerance),1,Sample_Number) ##note might fail if peak around max end of Z range
-
-            ZCoord[i] = Z_Peak
-            DigitalList.append(Analog_Peak)
-                
-        
-    
-    #go to initial position for easy scan repeat
-    XGoTo(int(XCoord[0]))
-    YGoTo(int(YCoord[0]))
-    ZGoTo(int(ZCoord[0]))
-    #RGoTo(int(RCoord[0]))
-    
-    ScanResults = [[XCoord],[YCoord],[DigitalList]] #just to simplify handling. dump to pickle 
-    
-    scan_file = open('/home/pi/Desktop/ladybug/laserresults.pkl', 'wb') 
-                         
-    pickle.dump(ScanResults,scan_file) #working!
-    scan_file.close()
-                    
-    return(ScanResults)
 
 def GridScan(ScanLocations,conditions='default'):
      
@@ -1191,10 +1098,6 @@ keypress_var = tk.IntVar() #1 if button is pressed
 keypress_button = tk.Checkbutton(SecondaryBottomFrame, text="ENABLE KEYBOARD CONTROLS", variable=keypress_var, command=allow_keypress)
 keypress_button.pack(side = tk.RIGHT)
 
-#Display analog value of PD
-AnalogValue = tk.Label(SecondaryBottomFrame, font=(myFont), height = 2, width=12)
-AnalogValue.after(1000, AnalogGet)
-AnalogValue.pack(side = tk.TOP)
 
 LeftLabel = tk.Label(win)
 LeftLabel._repeat_freq = int(SLOW*1000*10) #holding Down key, milisecond per repeat.. Delay should be how long it actually takes to move
@@ -1241,8 +1144,6 @@ try:
     time.sleep(0.1)
     GPIO.output(BEEP,GPIO.LOW)
     
-    LaserTest = DefineScan(1100,1300,600,800,0,0,0,0,20,20) #placed in a random location so it will get lost
-
     
     scan_file = open('/home/pi/Desktop/ladybug/scandata.pkl', 'rb')
         
