@@ -79,7 +79,7 @@ FASTER = 0.0006
 FAST = 0.002 
 SLOW = 0.007
 SLOWER = 0.03
-
+SLOWERER = 0.06
 
 #Begin GPIO output setup
 
@@ -118,7 +118,8 @@ def restart(): #restart whole pi
     print(output)
 
 def MoveX(direction,numsteps,delay):
-    '''parent function for x. '''
+    '''parent function for moving x. Just sets direction pin,
+    then flips step pin high and low with delay  '''
     
     GPIO.output(XDIR, direction)
         
@@ -130,21 +131,23 @@ def MoveX(direction,numsteps,delay):
     
     global GlobalX
     
-    if direction == 1: #totally arbitrary.
+    if direction == XForward:
         GlobalX += numsteps
     else:
         GlobalX -= numsteps
     
-    XPosition.configure(text="X: "+str(GlobalX) + "/" + str(XMax)) #updates the global position on the screen. Not a good way to do it!
+    XPosition.configure(text="X: "+str(GlobalX) + "/" + str(XMax)) 
+    #updates the global position on the screen. Get rid of this if headless!
     
 def XGoTo(XDest, XMin=0):
-    """checks the place is valid and then calls MoveX appropriately.
-    Should be upgradable to have boundaries, aka min and max."""
+    """checks if the place is valid and then calls MoveX appropriately.
+    Should stop you from going across boundaries."""
+  
     global GlobalX
     global XMax
     
     if not isinstance(XDest,int):
-        return ('integers only dingus') #this is not good practice right
+        return ('Please input an integer for X destination') #why you so stupid, stupid
         
     if XDest <= XMax and XDest >= XMin:
         distance = XDest - GlobalX
@@ -168,19 +171,19 @@ def MoveY(direction,numsteps,delay):
     
     global GlobalY
     
-    if direction == 0: #totally arbitrary 
+    if direction == YForward:  
         GlobalY += numsteps
     else:
         GlobalY -= numsteps
-    YPosition.configure(text="Y: "+str(GlobalY) + "/" +str(YMax))
-
+    YPosition.configure(text="Y: "+str(GlobalY) + "/" +str(YMax)) #REMOVE IF CONVERTING TO HEADLESS WITHOUT GUI
+    
 def YGoTo(YDest, YMin=0):
-    """checks the place is valid and then calls MoveY appropriately.
-    Should be upgradable to have boundaries, aka min and max."""
+    """checks the place is valid and then calls MoveY appropriately."""
+  
     global GlobalY
     global YMax
     if not isinstance(YDest,int):
-        return ('integers only dingus') #this is not good practice right
+        return ('Please input an integer for Y destination')
         
     if YDest <= YMax and YDest >= YMin:
         distance = YDest - GlobalY
@@ -193,8 +196,7 @@ def YGoTo(YDest, YMin=0):
 
 def MoveZ(direction,numsteps,delay):
     '''parent function for Z. This version has no sleep pin enable/disable:
-    USE ONLY WITH LOW VOLTAGE (Less than 5v, less than 150 ma, or whatever
-    doesn't cause the motor to overheat'''
+    Be careful to use a low voltage and amount of current! Otherwise small motors like this will get hot!'''
     
     GPIO.output(ZDIR, direction)
     global GlobalZ
@@ -206,22 +208,22 @@ def MoveZ(direction,numsteps,delay):
         GPIO.output(ZSTEP, GPIO.LOW)        
         
     
-    if direction == ZFORWARD: #totally arbitrary 
+    if direction == ZFORWARD: 
         GlobalZ += numsteps
     else:
         GlobalZ -= numsteps
-    ZPosition.configure(text="Z: "+str(GlobalZ) + "/3000")
+    ZPosition.configure(text="Z: "+str(GlobalZ) + "/" + str(ZMax))
 
-def ZGoTo(ZDest, ZMin=0, ZMax=3000):
+def ZGoTo(ZDest, ZMin=0):
     """checks the place is valid and then calls MoveZ appropriately.
     At the home position there happens to be just about 2000 steps
-    forward and 1000 steps back --- for 1 micron per step.
-    
-    Reworked to start at 0 and end at 3000"""
+    forward and 1000 steps back --- for 1 micron per step."""
     
     global GlobalZ
+    global ZMax
+    
     if not isinstance(ZDest,int):
-        return ('integers only dingus') #this is not good practice right
+        return ('Please input an integer for Z destination')
         
     if ZDest <= ZMax and ZDest >= ZMin:
         numsteps = ZDest - GlobalZ
@@ -242,11 +244,16 @@ def MoveR(direction,numsteps,delay):
         time.sleep(delay)
         GPIO.output(RSTEP,GPIO.LOW)
     
-    #insert counting information here
+    '''Count information like the others could be inserted here. 
+    But we don't really have a way to define our "zero", except for wherever it is when we start the scan,
+    which is problematic because what if we restart with our R in a different place? 
+    If there are undiscovered problems, I think they would revolved around this area. FYI. '''
         
 
+ #note suspicious lack of RGoTo! I don't remember exactly why, but probably because it has no endstop. 
+ 
       
-    
+   
 def DefineScan(XMin, XMax, YMin, YMax, ZMin, ZMax, RMin, RMax, XSteps=100, YSteps=100, ZSteps=1, RSteps=1):
     """
     Used to generate a dictionary with four keys, each of which maps to a list containing
