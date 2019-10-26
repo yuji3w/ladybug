@@ -14,51 +14,51 @@ import sys
 import select #for timeouts and buzzing when usb gets disconnect
 import pickle
 
-G
 GPIO.setmode(GPIO.BOARD)
 
-GlobalX = 0 #X distance from home in steps
-GlobalY = 0
-GlobalZ = 0
-GlobalR = 0 #keep same naming scheme, but R = rotation
-#Note that upon resuming a scan we have to reset this to R we left off
+#Distances from home position in steps for each motor
 
-#These are set by the GUI and passed off to scan configuration
+GlobalX = 0 #"Top" motor
+GlobalY = 0 #"Bottom" motor
+GlobalZ = 0 #up and down
+GlobalR = 0 #Rotation
+
+#These are scan parameters intended to be set by the GUI and can otherwise be ignored
 XScanMin = 0
 XScanMax = 0
 YScanMin = 0
 YScanMax = 0
 ZScanMin = 0
 ZScanMax = 0
-XScanStep = 100 #A good default
+XScanStep = 100 #amount of motion (in steps) in each dimension in the scan 
 YScanStep = 100
 ZScanStep = 500 
-RScanNumber = 1
+RScanNumber = 1 #number of rotations per scan, 1 = no rotation
 
-FactorsOf160 = [1,2,4,5,8,10,16,20,32,40,80,160] #for drop down menu of rotations of R
-
-#PDIn = 7 #photodiode input pin
-
+FactorsOf160 = [1,2,4,5,8,10,16,20,32,40,80,160] #for drop down menu of rotations of R since 20 step motor with 8th micro
  
-YDIR = 26 #SAMPLE #change back to 26
-XDIR = 18 #CAMERA
-ZDIR = 40
-RDIR = 19 #for clock and counterclock
+#begin defining pins for input and output (GPIO.BOARD). These can be changed to fit your setup.
 
-YSTEP = 24 #stepping pin 
+YDIR = 26 #Sample AKA bottom direction pin
+XDIR = 18 #Camera AKA top
+ZDIR = 40 
+RDIR = 19 
+
+YSTEP = 24 #Stepping pins
 XSTEP = 16
 ZSTEP = 38
 RSTEP = 23
 
-BEEP = 33 #GPIO pin to beep for pleasing yujie
+BEEP = 33 #GPIO pin to beep for indications (thanks Yujie). Can also put an LED here or something else
 
-XMax = 1800 #max range. Affected by choice of sled
+XLimit = 7 #Mechanical limitswitch pin input
+YLimit = 13
+ZLimit = 15 #Optical switch pin input!
+
+
+XMax = 1800 #max range in 8th microsteps. Affected by choice of carriage
 YMax = 1800
 StepsPerRotation = 160 #for 8th microstepping on the R axis we have
-
-XLimit = 7 #limit switch pin input
-YLimit = 13
-ZLimit = 15 #optical switch. Goes low but there is a transition over a few microsteps
 
 XFORWARD = 1 #Arbitrary  
 XBACKWARD = 0   
