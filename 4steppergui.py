@@ -117,7 +117,136 @@ def restart(): #restart whole pi
     output = process.communicate()[0]
     print(output)
 
+def MoveX(direction,numsteps,delay):
+    '''parent function for x. '''
+    
+    GPIO.output(XDIR, direction)
+        
+    for i in range(numsteps):
+            
+            GPIO.output(XSTEP, GPIO.HIGH)
+            time.sleep(delay)
+            GPIO.output(XSTEP, GPIO.LOW)
+    
+    global GlobalX
+    
+    if direction == 1: #totally arbitrary.
+        GlobalX += numsteps
+    else:
+        GlobalX -= numsteps
+    
+    XPosition.configure(text="X: "+str(GlobalX) + "/" + str(XMax)) #updates the global position on the screen. Not a good way to do it!
+    
+def XGoTo(XDest, XMin=0):
+    """checks the place is valid and then calls MoveX appropriately.
+    Should be upgradable to have boundaries, aka min and max."""
+    global GlobalX
+    global XMax
+    
+    if not isinstance(XDest,int):
+        return ('integers only dingus') #this is not good practice right
+        
+    if XDest <= XMax and XDest >= XMin:
+        distance = XDest - GlobalX
+        if distance > 0: #forward
+            MoveX(XFORWARD,distance,FASTER)
+        else:
+            MoveX(XBACKWARD,abs(distance),FASTER) 
+    else:
+        print ('Destination out of range')
 
+def MoveY(direction,numsteps,delay):
+    '''parent function for Y. '''
+    
+    GPIO.output(YDIR, direction)    
+        
+    for i in range(numsteps):
+            
+        GPIO.output(YSTEP, GPIO.HIGH)
+        time.sleep(delay)
+        GPIO.output(YSTEP, GPIO.LOW)        
+    
+    global GlobalY
+    
+    if direction == 0: #totally arbitrary 
+        GlobalY += numsteps
+    else:
+        GlobalY -= numsteps
+    YPosition.configure(text="Y: "+str(GlobalY) + "/" +str(YMax))
+
+def YGoTo(YDest, YMin=0):
+    """checks the place is valid and then calls MoveY appropriately.
+    Should be upgradable to have boundaries, aka min and max."""
+    global GlobalY
+    global YMax
+    if not isinstance(YDest,int):
+        return ('integers only dingus') #this is not good practice right
+        
+    if YDest <= YMax and YDest >= YMin:
+        distance = YDest - GlobalY
+        if distance > 0: #forward
+            MoveY(YFORWARD,distance,FASTER)
+        else:
+            MoveY(YBACKWARD,abs(distance),FASTER) 
+    else:
+        print ('Destination out of range')
+
+def MoveZ(direction,numsteps,delay):
+    '''parent function for Z. This version has no sleep pin enable/disable:
+    USE ONLY WITH LOW VOLTAGE (Less than 5v, less than 150 ma, or whatever
+    doesn't cause the motor to overheat'''
+    
+    GPIO.output(ZDIR, direction)
+    global GlobalZ
+         
+    for i in range(numsteps):
+            
+        GPIO.output(ZSTEP, GPIO.HIGH)
+        time.sleep(delay)    
+        GPIO.output(ZSTEP, GPIO.LOW)        
+        
+    
+    if direction == ZFORWARD: #totally arbitrary 
+        GlobalZ += numsteps
+    else:
+        GlobalZ -= numsteps
+    ZPosition.configure(text="Z: "+str(GlobalZ) + "/3000")
+
+def ZGoTo(ZDest, ZMin=0, ZMax=3000):
+    """checks the place is valid and then calls MoveZ appropriately.
+    At the home position there happens to be just about 2000 steps
+    forward and 1000 steps back --- for 1 micron per step.
+    
+    Reworked to start at 0 and end at 3000"""
+    
+    global GlobalZ
+    if not isinstance(ZDest,int):
+        return ('integers only dingus') #this is not good practice right
+        
+    if ZDest <= ZMax and ZDest >= ZMin:
+        numsteps = ZDest - GlobalZ
+        if numsteps > 0: #forward
+            MoveZ(ZFORWARD,numsteps,FASTERER)
+        else:
+            MoveZ(ZBACKWARD,abs(numsteps),FASTERER) 
+    else:
+        print ('Destination out of range')
+
+def MoveR(direction,numsteps,delay):
+
+    GPIO.output(RDIR, direction)
+    global GlobalR
+    
+    for i in range(numsteps):
+        GPIO.output(RSTEP, GPIO.HIGH)
+        time.sleep(delay)
+        GPIO.output(RSTEP,GPIO.LOW)
+    
+    #insert counting information here
+        
+
+      
+    
 def DefineScan(XMin, XMax, YMin, YMax, ZMin, ZMax, RMin, RMax, XSteps=100, YSteps=100, ZSteps=1, RSteps=1):
     """
     Used to generate a dictionary with four keys, each of which maps to a list containing
@@ -203,7 +332,7 @@ def GridScan(ScanLocations,conditions='default'):
         save_location = filedialog.askdirectory() #pop up screen asking where to save files like flash drive
         filetype = ".png" #jpgs are honestly ok too and might make things easier/faster
         resolution = "640x480" #for crappy microscope, not necessarily reliable, though
-        timeallowed = 60 #number of seconds you have to save the scan if the USB is failing before auto restart!
+        timeallowed = 30 #number of seconds you have to save the scan if the USB is failing before auto restart!
         num_failures = 0 #times restarted so far
         original_pics = len(XCoord) 
         original_time = start_time
@@ -230,7 +359,8 @@ def GridScan(ScanLocations,conditions='default'):
     print("Stepping {} per image".format(str(StepsPerRotation))) #for debugging
     print("has failed and restarted {} times so far".format(str(num_failures)))
     
-    #Begin actually going to places
+    #Initialize locations
+    
     XGoTo(int(XCoord[0]))
     YGoTo(int(YCoord[0]))
     ZGoTo(int(ZCoord[0]))
@@ -240,46 +370,46 @@ def GridScan(ScanLocations,conditions='default'):
         
     for i in range(num_pictures):
         
-        if i % 100 == 0: #every 100 pics
+        #beep!
+        if i % 100 == 0: #Should be percentage of remaining but this is ok
             print("{} of {} pictures remaining".format((num_pictures-i),original_pics))
-            GPIO.output(BEEP,GPIO.HIGH)
-            time.sleep(0.3)
+            GPIO.output(BEEP,GPIO.HIGH) 
+            time.sleep(0.3) #can eliminate if you're pinching seconds
             GPIO.output(BEEP,GPIO.LOW)
-        
-        folder = save_location + "/Z" + str(ZCoord[i]).zfill(4) + "R" + str(RCoord[i]).zfill(3) #will make new folder on each change in Z or R
-        if not os.path.exists(folder): #should hopefully continue saving in the same folder after restart
+            
+        #make new folder every time you change Z and R:
+        folder = save_location + "/Z" + str(ZCoord[i]).zfill(4) + "R" + str(RCoord[i]).zfill(3) 
+        if not os.path.exists(folder):
             os.makedirs(folder)
                 
             
-        #go to locations
-                    
+        #go to locations                    
         XGoTo(int(XCoord[i]))
         YGoTo(int(YCoord[i]))
         ZGoTo(int(ZCoord[i]))
         RGoTo(int(RCoord[i]))
             
-        time.sleep(0.1) #vibration control.
-                
-            
+        time.sleep(0.1) #VIBRATION CONTROL! 
+               
             
             
         name = "X" + str(XCoord[i]).zfill(4) + "Y" + str(YCoord[i]).zfill(4) + "Z" + str(ZCoord[i]).zfill(4) + "R" + str(RCoord[i]).zfill(3) + "of" + str(NumberOfRotations).zfill(3) + filetype
 
         """begin filesaving block"""
         
-        try:
-            for w in range(3):
+        try: #Largely, problems are due to USB disconnecting or just not being in.
+            for w in range(3): #try to take pic with fswebcam
                 
                 proc = subprocess.Popen(["fswebcam", "-r " + resolution, "--no-banner", folder + "/" + name, "-q"], stdout=subprocess.PIPE) #like check_call(infinite timeout)
                 output = proc.communicate(timeout=10)[0]
                 
-                if os.path.isfile(folder + "/" + name): #better than checking time elapsed...
-                    if w > 0: #USB was restarted
+                if os.path.isfile(folder + "/" + name): #check if file was created 
+                    if w > 0: #AKA, USB was broken but fixed in time
                         print ('Okay thanks bozo. Restarting with {}'.format(name))
                         
                     break #move on to next picture
                 
-                elif (w <= 1): #usb got unplugged effing #hell
+                elif (w <= 1): #usb got unplugged aaaaggghhhhh
                 
                     #attempt to catch USB from https://stackoverflow.com/questions/1335507/keyboard-input-with-timeout-in-python  
                     print('HEY BOZO THE USB GOT UNPLUGGED UNPLUG IT AND PLUG IT BACK IN WITHIN {} SECONDS OR WE REBOOT'.format(timeallowed))
@@ -287,11 +417,11 @@ def GridScan(ScanLocations,conditions='default'):
                 
                     GPIO.output(BEEP,GPIO.HIGH) #beep and bibrate
                 
-                    time.sleep(timeallowed)
+                    time.sleep(timeallowed) #Sorry, it will beep the full time, even if you restart it immediately
                 
                     GPIO.output(BEEP,GPIO.LOW)
                 
-                else: #USB unpluged and it wasn't plugged in in time
+                else: #Begin saving current scan data for restart. This could be reworked for periodic backup
                     UpdatedX = XCoord[i:]
                     UpdatedY = YCoord[i:]
                     UpdatedZ = ZCoord[i:]
@@ -316,43 +446,51 @@ def GridScan(ScanLocations,conditions='default'):
                                   'failure_times':failure_times} #after restart because no gui timeout after 0 seconds
                         
                     scan_params = [UpdatedScanLocations,conditions]
-                    print(scan_params)
+                    print(scan_params) #for debugging if sitting there
                     time.sleep(2)
                     
-                    scan_file = open('/home/pi/Desktop/ladybug/scandata.pkl', 'wb') #hardcode scan location
+                    scan_file = open('/home/pi/Desktop/ladybug/scandata.pkl', 'wb') #SCAN DATA LOCATION HARDCODED ONTO DESKTOP
+                    #Sorry about this, but it's because the auto restart cron script needs to know where to look. 
                          
-                    pickle.dump(scan_params,scan_file) #working!
+                    pickle.dump(scan_params,scan_file)
                     scan_file.close()
                     
                     print('restarting sorryyyyyy')
                         
                     restart()
                         
-        except subprocess.TimeoutExpired: #does not catch USB UNPLUG. Catches if it takes too long because lag
+        except subprocess.TimeoutExpired: #does not catch USB UNPLUG. Catches if it takes too long because of lag. Rarely happens
     
             print ("{} failed :( ".format(name))
             proc.terminate() #corrective measure?
             continue #move on. In true loop, it keeps trying the same picture since it shouldn't matter which one
 
             
-        
-    print ('scan completed successfully after {} seconds! {} images taken and {} restarts'.format(time.strftime("%H:%M:%S", time.gmtime(time.time() - original_time)), str(original_pics),str(num_failures)))
+            
+    print ('scan completed successfully after {} seconds! {} images taken and {} restarts'.format
+           (time.strftime("%H:%M:%S", time.gmtime(time.time() - original_time)), str(original_pics),str(num_failures)))
     try:
-        os.rename('/home/pi/Desktop/ladybug/scandata.pkl','/home/pi/Desktop/ladybug/scandataold.pkl') #quick fix to avoid infinite loop while still being able to analyze
-    except FileNotFoundError:
-        print('nooooooo failures! woo')
+        os.rename('/home/pi/Desktop/ladybug/scandata.pkl','/home/pi/Desktop/ladybug/scandataold.pkl') 
+      #if you don't rename this, it can form an infinite loop! Should rename to reflect scan data or something
+    except FileNotFoundError: #meaning it never restarted and created scandata file
+        pass
     
-    for i in range(5):
+    for i in range(5): #beep beep beep beep beep
         GPIO.output(BEEP,GPIO.HIGH)
         time.sleep(0.2)
         GPIO.output(BEEP,GPIO.LOW)
 
-    a = input('press any key to exit')
-def XRepeatTest(num_trials=100):
+    a = input('press any key to exit') #hang to await confirmation scan completed if run in autoclosing shell
+
+#end main scan procedure. 
     
+def XRepeatTest(num_trials=100):
+    """this will move a lot and then home, to check to make sure we're not skipping steps or something. 
+    You can probably ignore this. """
+  
     HomeX()
     HomeX() #twice just to make sure it's good
-    HomeX() #first couple homes are sometimes wonky. 
+    HomeX() #one more for good luck? 
     global XMax
     total_steps = 0
     ranlocold = 0 #location old
@@ -376,7 +514,8 @@ def XRepeatTest(num_trials=100):
 
 
 def YRepeatTest(num_trials=100): 
-    
+    #same as X, you can probably ignore this or even remove entirely
+  
     HomeY()
     HomeY() 
     HomeY() #The first couple of homes are sometimes wonky
@@ -402,8 +541,8 @@ def YRepeatTest(num_trials=100):
     return([total_steps,imperfection,ListOfLoc])    
 
 def MultiRepeatTest(num_repeats = 100):
-    """calls y and x repeat many times with random numbers so we can plot stuff"""
-    X_History = [] #populated with list of lists. Each list being 
+    """calls y and x repeat many many times with random numbers so we can plot stuff"""
+    X_History = [] #populated with list of lists. 
     Y_History = []
     for i in range(num_repeats): #total trials
         numpertrial = 100 #random.randrange(1,10) #number of runs per trial
@@ -428,43 +567,6 @@ def MultiRepeatTest(num_repeats = 100):
     return(X_History,Y_History)        
 
 
-def MoveX(direction,numsteps,delay):
-    '''parent function for x. '''
-    
-    GPIO.output(XDIR, direction)
-        
-    for i in range(numsteps):
-            
-            GPIO.output(XSTEP, GPIO.HIGH)
-            time.sleep(delay)
-            GPIO.output(XSTEP, GPIO.LOW)
-    
-    global GlobalX
-    
-    if direction == 1: #totally arbitrary.
-        GlobalX += numsteps
-    else:
-        GlobalX -= numsteps
-    
-    XPosition.configure(text="X: "+str(GlobalX) + "/" + str(XMax)) #updates the global position on the screen. Not a good way to do it!
-    
-def XGoTo(XDest, XMin=0):
-    """checks the place is valid and then calls MoveX appropriately.
-    Should be upgradable to have boundaries, aka min and max."""
-    global GlobalX
-    global XMax
-    
-    if not isinstance(XDest,int):
-        return ('integers only dingus') #this is not good practice right
-        
-    if XDest <= XMax and XDest >= XMin:
-        distance = XDest - GlobalX
-        if distance > 0: #forward
-            MoveX(XFORWARD,distance,FASTER)
-        else:
-            MoveX(XBACKWARD,abs(distance),FASTER) 
-    else:
-        print ('Destination out of range')
 
 def XGet(event):
     '''records enter press from text box (XEntry) and calls "go to specified location function'''
@@ -474,41 +576,6 @@ def XGet(event):
     except ValueError: #hey dumbo enter an integer
         print ("hey dumbo enter an integer")    
 
-def MoveY(direction,numsteps,delay):
-    '''parent function for Y. '''
-    
-    GPIO.output(YDIR, direction)    
-        
-    for i in range(numsteps):
-            
-        GPIO.output(YSTEP, GPIO.HIGH)
-        time.sleep(delay)
-        GPIO.output(YSTEP, GPIO.LOW)        
-    
-    global GlobalY
-    
-    if direction == 0: #totally arbitrary 
-        GlobalY += numsteps
-    else:
-        GlobalY -= numsteps
-    YPosition.configure(text="Y: "+str(GlobalY) + "/" +str(YMax))
-
-def YGoTo(YDest, YMin=0):
-    """checks the place is valid and then calls MoveY appropriately.
-    Should be upgradable to have boundaries, aka min and max."""
-    global GlobalY
-    global YMax
-    if not isinstance(YDest,int):
-        return ('integers only dingus') #this is not good practice right
-        
-    if YDest <= YMax and YDest >= YMin:
-        distance = YDest - GlobalY
-        if distance > 0: #forward
-            MoveY(YFORWARD,distance,FASTER)
-        else:
-            MoveY(YBACKWARD,abs(distance),FASTER) 
-    else:
-        print ('Destination out of range')
 
 def YGet(event):
     '''records enter press from text box (YEntry) and calls "go to specified location function'''
@@ -518,61 +585,6 @@ def YGet(event):
     except ValueError: #hey dumbo enter an integer
         print ("hey dumbo enter an integer")    
 
-
-def MoveR(direction,numsteps,delay):
-
-    GPIO.output(RDIR, direction)
-    global GlobalR
-    
-    for i in range(numsteps):
-        GPIO.output(RSTEP, GPIO.HIGH)
-        time.sleep(delay)
-        GPIO.output(RSTEP,GPIO.LOW)
-    
-    #insert counting information here
-        
-
-
-def MoveZ(direction,numsteps,delay):
-    '''parent function for Z. This version has no sleep pin enable/disable:
-    USE ONLY WITH LOW VOLTAGE (Less than 5v, less than 150 ma, or whatever
-    doesn't cause the motor to overheat'''
-    
-    GPIO.output(ZDIR, direction)
-    global GlobalZ
-         
-    for i in range(numsteps):
-            
-        GPIO.output(ZSTEP, GPIO.HIGH)
-        time.sleep(delay)    
-        GPIO.output(ZSTEP, GPIO.LOW)        
-        
-    
-    if direction == ZFORWARD: #totally arbitrary 
-        GlobalZ += numsteps
-    else:
-        GlobalZ -= numsteps
-    ZPosition.configure(text="Z: "+str(GlobalZ) + "/3000")
-
-def ZGoTo(ZDest, ZMin=0, ZMax=3000):
-    """checks the place is valid and then calls MoveZ appropriately.
-    At the home position there happens to be just about 2000 steps
-    forward and 1000 steps back --- for 1 micron per step.
-    
-    Reworked to start at 0 and end at 3000"""
-    
-    global GlobalZ
-    if not isinstance(ZDest,int):
-        return ('integers only dingus') #this is not good practice right
-        
-    if ZDest <= ZMax and ZDest >= ZMin:
-        numsteps = ZDest - GlobalZ
-        if numsteps > 0: #forward
-            MoveZ(ZFORWARD,numsteps,FASTERER)
-        else:
-            MoveZ(ZBACKWARD,abs(numsteps),FASTERER) 
-    else:
-        print ('Destination out of range')
 
 def ZGet(event):
     '''records enter press from text box (ZEntry) and calls "go to specified location function'''
