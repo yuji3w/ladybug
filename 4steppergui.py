@@ -1,20 +1,20 @@
 #!/usr/bin/env python3
 
-from numpy import *
-import random
+from numpy import * #for generating scan parameters
+import random #for repeatability tests
 import time
 import math
 import os
-import tkinter as tk
+import tkinter as tk #contains GUI, can be removed if converted to headless
 from tkinter import font
 from tkinter import filedialog
 import RPi.GPIO as GPIO
 import subprocess #For taking a picture with fswebcam
 import sys
 import select #for timeouts and buzzing when usb gets disconnect
-import pickle
+import pickle #for saving scan data and resuming
 
-GPIO.setmode(GPIO.BOARD)
+GPIO.setmode(GPIO.BOARD) #IMPORTANT! Physical pin layout
 
 #Distances from home position in steps for each motor
 
@@ -60,41 +60,48 @@ XMax = 1800 #max range in 8th microsteps. Affected by choice of carriage
 YMax = 1800
 StepsPerRotation = 160 #for 8th microstepping on the R axis we have
 
-XFORWARD = 1 #Arbitrary  
+XFORWARD = 1 #Arbitrary, can flip around if motors go in wrong direction
 XBACKWARD = 0   
 
-YFORWARD = 0 #this is bad coding
-YBACKWARD = 1
+YFORWARD = 1 
+YBACKWARD = 0
 
-ZFORWARD = 0
-ZBACKWARD = 1
+ZFORWARD = 1
+ZBACKWARD = 0
 
-RFORWARD = 1 #To keep naming scchhhomeme. But we'll consider forward as clockwise if referenced
+RFORWARD = 1 #Consider forward as clockwise if looking at your sample if referenced
 RBACKWARD = 0
+
+#preset speeds, defined as delay between steps in s.
 
 FASTERER = 0.0003
 FASTER = 0.0006
-FAST = 0.002 #delay between steps in s,
+FAST = 0.002 
 SLOW = 0.007
 SLOWER = 0.03
 
-GPIO.setup(BEEP, GPIO.OUT)
 
+#Begin GPIO output setup
+
+GPIO.setup(BEEP, GPIO.OUT)
 GPIO.setup(XDIR, GPIO.OUT)
 GPIO.setup(YDIR, GPIO.OUT)
 GPIO.setup(ZDIR, GPIO.OUT)
 GPIO.setup(RDIR, GPIO.OUT)
-
 GPIO.setup(XSTEP, GPIO.OUT)
 GPIO.setup(YSTEP, GPIO.OUT)
 GPIO.setup(ZSTEP, GPIO.OUT)
 GPIO.setup(RSTEP, GPIO.OUT)
 
-GPIO.setup(YLimit, GPIO.IN, pull_up_down=GPIO.PUD_UP) #sense pin for Y home switch
-GPIO.setup(XLimit, GPIO.IN, pull_up_down=GPIO.PUD_UP) #sense pin for X home switch
-GPIO.setup(ZLimit, GPIO.IN) #no pull up. Direct sense
+#GPIO input setup for limit switches
+GPIO.setup(YLimit, GPIO.IN, pull_up_down=GPIO.PUD_UP) 
+GPIO.setup(XLimit, GPIO.IN, pull_up_down=GPIO.PUD_UP) 
+GPIO.setup(ZLimit, GPIO.IN) #no pull up! Direct sense with optical switch.
 
-#GPIO.setup(PDIn, GPIO.IN)
+
+#Start Tkinter GUI window. More Tkinter way below. 
+#May fork to a headless version of this with all Tkinter stuff removed,
+#Since I think it adds a lot of bloat and not too much benefit.
 
 win = tk.Tk()
 myFont = tk.font.Font(family='Helvetica', size=12, weight='bold')
@@ -102,8 +109,9 @@ myBigFont = tk.font.Font(family='Helvetica', size=20,weight='bold')
 font.families()
 
 
+#BEGIN ACTUAL CODE
 
-def restart(): #restart pi
+def restart(): #restart whole pi
     command = "/usr/bin/sudo /sbin/shutdown -r now"
     process = subprocess.Popen(command.split(), stdout=subprocess.PIPE)
     output = process.communicate()[0]
@@ -111,14 +119,15 @@ def restart(): #restart pi
 
 
 def DefineScan(XMin, XMax, YMin, YMax, ZMin, ZMax, RMin, RMax, XSteps=100, YSteps=100, ZSteps=1, RSteps=1):
-    """core from stack exchange. https://stackoverflow.com/questions/20872912/raster-scan-pattern-python
-    modified october 11 2018 to include Z and R, meaning R is now set in absolute positions
-    Important: Because its not inclusive in max, it will break if for instance you say rmin = 0 rmax = 0, so we add 1 to all maximums
-    so if you dont want to go more than one Z or R, set for instance Zmin=Zmax and ZSteps = 1.
+    """
+    Used to generate a list of four lists, containing the absolute positions of X,Y,Z, and R, for every point of a scan.
+    So if you don't want to move Z and R, just for instance set Zmin=Zmax=0 and ZSteps = 1.
+ 
+    Core, of 2-axis control, from stack exchange. https://stackoverflow.com/questions/20872912/raster-scan-pattern-python
     
-    returns a list of four lists which each contain the absolute positions at every point in a scan for x,y,z,r"""
+    """
     
-    XMax = XMax+1
+    XMax = XMax+1 #its not inclusive in max and will break if min = max, so we add 1 to all maximums.
     YMax = YMax+1
     ZMax = ZMax+1
     RMax = RMax+1
@@ -142,10 +151,8 @@ def DefineScan(XMin, XMax, YMin, YMax, ZMin, ZMax, RMin, RMax, XSteps=100, YStep
     yscan = concatenate(yscan)
     
     """up until this, it works just fine for x/y. I am adding 
-    my own code to account for Z now. Not efficient if there are a LOT of Z changes (it does X/Y rastering and returns to initial position for each Z).
-    Otherwise it's ok.
-    Note this will return empty lists if zgrid is empty (minz=maxz)
-    
+    my own code to account for Z now. Not efficient if there are a LOT of Z changes 
+    (it does X/Y rastering and returns to initial position for each change in Z). Otherwise it's fine.    
     
     """
     
@@ -161,10 +168,8 @@ def DefineScan(XMin, XMax, YMin, YMax, ZMin, ZMax, RMin, RMax, XSteps=100, YStep
             NewYScan.append(yscan[j])
             NewZScan.append(zgrid[i]) #note i not j
         
-    #and for rotations. Same deal as with Z"
+    #Repeat for change in rotation
 
-    #this too will return empty lists of minr = maxr
-            
     NewNewXScan = [] #I seriously hope nobody ever reads these variable names
     NewNewYScan = []
     NewNewZScan = []
