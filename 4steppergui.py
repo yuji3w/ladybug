@@ -62,7 +62,7 @@ YMax = 1800
 ZMax = 3000
 StepsPerRotation = 160 #for 8th microstepping on the R axis we have
 
-XFORWARD = 1 #Arbitrary, can flip around if motors go in wrong direction
+XFORWARD = 1 #Forward means away from home position
 XBACKWARD = 0   
 
 YFORWARD = 1 
@@ -159,7 +159,8 @@ def XGoTo(XDest, XMin=0):
             MoveX(XBACKWARD,abs(distance),FASTER) 
     else:
         print ('Destination out of range')
-
+      
+      
 def MoveY(direction,numsteps,delay):
     '''parent function for Y. '''
     
@@ -270,6 +271,87 @@ def RGoTo(RDest, RMin=0):
     else:
         print ('I understand the desire to watch the motor spin around a lot... but between {} and {} please'.format(RMin,StepsPerRotation))
               
+def CheckPress(PIN):
+    '''checks whether specified GPIO pin has been pressed, since home procedures have to call multiple times'''
+    input_state = GPIO.input(PIN)
+    if input_state == False: #button press
+            time.sleep(0.05) #debounce
+            input_state = GPIO.input(PIN)
+            if input_state == False: #still!
+                return True #yep, button press
+            
+def HomeX():
+    global GlobalX
+    for i in range(XMax + 200): #some number that's noticably larger than the range, but also will eventually stop in case something goes wrong 
+    
+    #check if button is pressed
+        
+        
+        if CheckPress(XLimit): #button pressed once. need to move forward and back again to ensure correct start position
+            MoveX(XForward,300,SLOW) #move forward
+            for j in range(350): #move back and check again
+                if CheckPress(XLimit): #again
+                    
+                
+                    print('Button has been pressed after {} steps!'.format(i))
+                    print('was already homed check: took {} out of 300 steps on the second bounce'.format(j))
+                    GlobalX = 0
+                    XPosition.configure(text="X: " +str(GlobalX) + "/" + str(XMax))
+                    return (i) #break away essentially
+                MoveX(XBACKWARD,1,SLOW)
+            #do stepping protocol (placed second in case button already pressed)
+        MoveX(XBACKWARD,1,FAST)#dir dis delay
+
+def HomeY():
+    global GlobalY
+    for i in range(YMax + 200): #some number that's noticably larger than the range, but also will eventually stop in case something goes wrong 
+    
+    #check if button is pressed
+        
+        
+        if CheckPress(YLimit): #button pressed once. need to move forward and back again to ensure correct start position
+            MoveY(YFORWARD,300,SLOW) #move forward
+            for j in range(350): #move back and check again
+                if CheckPress(YLimit): #again
+                    
+                
+                    print('Button has been pressed after {} steps!'.format(i))
+                    print('was already homed check: took {} out of 300 steps on the second bounce'.format(j))
+                    GlobalY = 0
+                    YPosition.configure(text="Y: "+str(GlobalY) + "/" + str(YMax))
+                    return (i) #break away essentially
+                MoveY(YBACKWARD,1,SLOW)
+            #do stepping protocol (placed second in case button already pressed)
+        MoveY(YBACKWARD,1,FAST)#dir dis delay
+
+def HomeZ():
+ """This is a bit different than X and Y, because the optical switch is tripped about a thousand steps up from the true bottom!
+ It's more hardcoded with actual numbers. 
+ This whole procedure should be replaced with a substituted-in copy of HomeY or X if using a regular physical switch.  """
+    global GlobalZ
+    
+    for i in range(ZMax + 500): 
+    
+    #check if button is pressed
+        
+    
+        if CheckPress(ZLimit): #button pressed once. need to move forward and back again to ensure correct start position
+            MoveZ(ZFORWARD,1200,FAST) #move forward -- at least 1k b/c neg range
+            for j in range(1400): #move back and check again
+                if CheckPress(ZLimit): #again
+                    
+                    MoveZ(ZBACKWARD, 1000, FAST) #START AT MINIMUM RANGE for easier calculating
+
+                    print('Optical switch has been tripped after {} steps!'.format(i))
+                    print('was already homed check: took {} out of 1200 steps on the second bounce'.format(j))
+                    
+                    
+                    GlobalZ = 0
+                    ZPosition.configure(text="Z: "+str(GlobalZ) + "/3000")
+                    return (i) #break away essentially
+                MoveZ(ZBACKWARD,1,FAST)
+            #do stepping protocol (second in case button already pressed)
+        MoveZ(ZBACKWARD,1,FAST)#dir dis delay
    
 def DefineScan(XMin, XMax, YMin, YMax, ZMin, ZMax, RMin, RMax, XSteps=100, YSteps=100, ZSteps=1, RSteps=1):
     """
@@ -619,84 +701,6 @@ def ZGet(event):
         print ("hey dumbo enter an integer")    
 
 
-def CheckPress(PIN):
-    '''checks whether specified GPIO pin has been pressed, since home procedures have to call multiple times'''
-    input_state = GPIO.input(PIN)
-    if input_state == False: #button press
-            time.sleep(0.05) #debounce
-            input_state = GPIO.input(PIN)
-            if input_state == False: #still!
-                return True #yep, button press
-            
-def HomeX():
-    global GlobalX
-    for i in range(2500): #some number that's noticably larger than the range, but also will eventually stop in case something goes wrong 
-    
-    #check if button is pressed
-        
-        
-        if CheckPress(XLimit): #button pressed once. need to move forward and back again to ensure correct start position
-            MoveX(1,300,0.01) #move forward
-            for j in range(400): #move back and check again
-                if CheckPress(XLimit): #again
-                    
-                
-                    print('Button has been pressed after {} steps!'.format(i))
-                    print('was already homed check: took {} out of 300 steps on the second bounce'.format(j))
-                    GlobalX = 0
-                    XPosition.configure(text="X: " +str(GlobalX) + "/" + str(XMax))
-                    return (i) #break away essentially
-                MoveX(0,1,SLOW)
-            #do stepping protocol (second in case button already pressed)
-        MoveX(0,1,FAST)#dir dis delay
-
-def HomeY():
-    global GlobalY
-    for i in range(2500): #some number that's noticably larger than the range, but also will eventually stop in case something goes wrong 
-    
-    #check if button is pressed
-        
-        
-        if CheckPress(YLimit): #button pressed once. need to move forward and back again to ensure correct start position
-            MoveY(YFORWARD,300,SLOW) #move forward
-            for j in range(400): #move back and check again
-                if CheckPress(YLimit): #again
-                    
-                
-                    print('Button has been pressed after {} steps!'.format(i))
-                    print('was already homed check: took {} out of 300 steps on the second bounce'.format(j))
-                    GlobalY = 0
-                    YPosition.configure(text="Y: "+str(GlobalY) + "/" + str(YMax))
-                    return (i) #break away essentially
-                MoveY(YBACKWARD,1,SLOW)
-            #do stepping protocol (second in case button already pressed)
-        MoveY(YBACKWARD,1,FAST)#dir dis delay
-
-def HomeZ():
-    global GlobalZ
-    
-    for i in range(2500): #some number that's noticably larger than the range, but also will eventually stop in case something goes wrong 
-    
-    #check if button is pressed
-        
-    
-        if CheckPress(ZLimit): #button pressed once. need to move forward and back again to ensure correct start position
-            MoveZ(ZFORWARD,1200,FAST) #move forward -- at least 1k b/c neg range
-            for j in range(1400): #move back and check again
-                if CheckPress(ZLimit): #again
-                    
-                    MoveZ(ZBACKWARD, 1000, FAST) #START AT MINIMUM RANGE for easier calculating
-
-                    print('Optical switch has been tripped after {} steps!'.format(i))
-                    print('was already homed check: took {} out of 1200 steps on the second bounce'.format(j))
-                    
-                    
-                    GlobalZ = 0
-                    ZPosition.configure(text="Z: "+str(GlobalZ) + "/3000")
-                    return (i) #break away essentially
-                MoveZ(ZBACKWARD,1,FAST)
-            #do stepping protocol (second in case button already pressed)
-        MoveZ(ZBACKWARD,1,FAST)#dir dis delay
 
 def GuiScan():
     
