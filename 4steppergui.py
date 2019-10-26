@@ -120,7 +120,8 @@ def restart(): #restart whole pi
 
 def DefineScan(XMin, XMax, YMin, YMax, ZMin, ZMax, RMin, RMax, XSteps=100, YSteps=100, ZSteps=1, RSteps=1):
     """
-    Used to generate a list of four lists, containing the absolute positions of X,Y,Z, and R, for every point of a scan.
+    Used to generate a dictionary with four keys, each of which maps to a list containing
+    the absolute positions of X,Y,Z, and R, for every point of a scan.
     So if you don't want to move Z and R, just for instance set Zmin=Zmax=0 and ZSteps = 1.
  
     Core, of 2-axis control, from stack exchange. https://stackoverflow.com/questions/20872912/raster-scan-pattern-python
@@ -187,37 +188,34 @@ def DefineScan(XMin, XMax, YMin, YMax, ZMin, ZMax, RMin, RMax, XSteps=100, YStep
 
 
 def GridScan(ScanLocations,conditions='default'):
+ 
+ """the main loop that carries out an actual scan. Accepts the dictionary output of DefineScan, and an optional dictionary of conditions,
+ which is necessary when performing a restart in the middle of the scan. """
      
-    XCoord = ScanLocations['X']
+    XCoord = ScanLocations['X'] #simple list of axis location at each point in scan
     YCoord = ScanLocations['Y']
     ZCoord = ScanLocations['Z']
     RCoord = ScanLocations['R']
     
     start_time = time.time()
-
-    """Note that we have already added 1 in the DefineScan to account for half intervals"""
     
-    
-    """conditions will contain save location, filetype, resolution. num_failures. First time running default
-    is passed which contains standard conditions, but you can always specify it if you want to."""
-    
-    if conditions == 'default':
-        save_location = filedialog.askdirectory()
-        filetype = ".png"
-        resolution = "640x480" #fswebcam adjusts to be higher at least with alternate microscope I have
-        timeallowed = 5 #number of seconds you have to save the scan.
-        num_failures = 0
-        original_pics = len(XCoord)
+    if conditions == 'default': #usually the case!
+        save_location = filedialog.askdirectory() #pop up screen asking where to save files like flash drive
+        filetype = ".png" #jpgs are honestly ok too and might make things easier/faster
+        resolution = "640x480" #for crappy microscope, not necessarily reliable, though
+        timeallowed = 60 #number of seconds you have to save the scan if the USB is failing before auto restart!
+        num_failures = 0 #times restarted so far
+        original_pics = len(XCoord) 
         original_time = start_time
         original_locations = ScanLocations
-        failed_pics=[]
-        failure_times=[]
+        failed_pics=[] #keeps track of which pic we were on when restart happens
+        failure_times=[] #keeps track of when failure happens
         
-    else:
+    else: #generally, inputted automatically after a restart
         save_location = conditions['save_location']
         filetype = conditions['filetype']
         resolution = conditions['resolution']
-        timeallowed=0 #after one restart we don't bother trying to save scan
+        timeallowed=0 #after one restart we don't bother trying to save scan.
         num_failures=conditions['num_failures']
         failed_pics=conditions['failed_pics']
         failure_times=conditions['failure_times']
@@ -225,17 +223,18 @@ def GridScan(ScanLocations,conditions='default'):
         original_time=conditions['original_time']
         original_locations=conditions['original_locations']
         
-    num_pictures = len(XCoord) #remaining, not originally
-    NumberOfRotations = len(set(RCoord))
+    num_pictures = len(XCoord) #remaining pics, not originally
+    NumberOfRotations = len(set(RCoord)) #1 means no rotation
     stepsPerRotation = ((max(RCoord)-min(RCoord))/len(set(RCoord)))
     
-    print("Stepping {} per image".format(str(StepsPerRotation))) #just for debugging
+    print("Stepping {} per image".format(str(StepsPerRotation))) #for debugging
     print("has failed and restarted {} times so far".format(str(num_failures)))
     
+    #Begin actually going to places
     XGoTo(int(XCoord[0]))
     YGoTo(int(YCoord[0]))
     ZGoTo(int(ZCoord[0]))
-    #RGoTo(int(RCoord[0]))
+    RGoTo(int(RCoord[0]))
     
     
         
@@ -257,7 +256,7 @@ def GridScan(ScanLocations,conditions='default'):
         XGoTo(int(XCoord[i]))
         YGoTo(int(YCoord[i]))
         ZGoTo(int(ZCoord[i]))
-        #RGoTo(int(RCoord[i]))
+        RGoTo(int(RCoord[i]))
             
         time.sleep(0.1) #vibration control.
                 
