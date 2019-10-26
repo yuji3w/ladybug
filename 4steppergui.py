@@ -16,12 +16,13 @@ import pickle #for saving scan data and resuming
 
 GPIO.setmode(GPIO.BOARD) #IMPORTANT! Physical pin layout
 
-#Distances from home position in steps for each motor
+#Distances from home position in steps for each motor. 
+#Starts at "0" so if you don't have any switches just move them there before running the program. 
 
 GlobalX = 0 #"Top" motor
 GlobalY = 0 #"Bottom" motor
 GlobalZ = 0 #up and down
-GlobalR = 0 #Rotation
+GlobalR = 0 #Rotation. 
 
 #These are scan parameters intended to be set by the GUI and can otherwise be ignored
 XScanMin = 0
@@ -31,7 +32,7 @@ YScanMax = 0
 ZScanMin = 0
 ZScanMax = 0
 XScanStep = 100 #amount of motion (in steps) in each dimension in the scan 
-YScanStep = 100
+YScanStep = 100 #reasonable default for field of view. Can scretch to 150 for faster scans.
 ZScanStep = 500 
 RScanNumber = 1 #number of rotations per scan, 1 = no rotation
 
@@ -58,6 +59,7 @@ ZLimit = 15 #Optical switch pin input!
 
 XMax = 1800 #max range in 8th microsteps. Affected by choice of carriage
 YMax = 1800
+ZMax = 3000
 StepsPerRotation = 160 #for 8th microstepping on the R axis we have
 
 XFORWARD = 1 #Arbitrary, can flip around if motors go in wrong direction
@@ -248,11 +250,26 @@ def MoveR(direction,numsteps,delay):
     But we don't really have a way to define our "zero", except for wherever it is when we start the scan,
     which is problematic because what if we restart with our R in a different place? 
     If there are undiscovered problems, I think they would revolved around this area. FYI. '''
-        
 
- #note suspicious lack of RGoTo! I don't remember exactly why, but probably because it has no endstop. 
- 
-      
+def RGoTo(RDest, RMin=0):
+    """checks that it's within the proper range and calls MoveR. Note that I just added this because I noticed it was missing. 
+    Not sure where it went or if I never made it for some reason, but then how was everything working...?"""
+  
+    global GlobalR
+    global StepsPerRotation
+    
+    if not isinstance(RDest,int):
+        return ('Please input an integer for R destination')
+        
+    if RDest <= StepsPerRotation and RDest >= RMin:
+        distance = RDest - GlobalR
+        if distance > 0: #forward
+            MoveR(RFORWARD,distance,FAST)
+        else:
+            MoveR(RBACKWARD,abs(distance),FAST) 
+    else:
+        print ('I understand the desire to watch the motor spin around a lot... but between {} and {} please'.format(RMin,StepsPerRotation))
+              
    
 def DefineScan(XMin, XMax, YMin, YMax, ZMin, ZMax, RMin, RMax, XSteps=100, YSteps=100, ZSteps=1, RSteps=1):
     """
@@ -1155,7 +1172,8 @@ SLabel._repeat_freq = int(SLOW*1000*10)
 SLabel._repeat_on = True
 
 
-"""begin resume scan if failed"""
+"""BEGIN MAIN LOOP, beginning with an attempt to resume scan if it detects that a previous one failed 
+(existence of scandata file)"""
 
 
 try:
@@ -1173,7 +1191,7 @@ try:
     scan_params = pickle.load(scan_file)
     scan_file.close()    
             
-    HomeX()
+    HomeX() 
     HomeY()
     HomeZ()
     
@@ -1181,14 +1199,14 @@ try:
     conditions = scan_params[1] #save location, filetype, resolution, timeout, numfailures
     
     """because R has no endstop we have to set it to what it was in the scan"""
-    #global GlobalR #I'm not sure why this causes a syntax error, it wasn'tbefore. 
-    GlobalR = conditions['R_Location']
+    #global GlobalR #I'm not sure why this causes a syntax error, it wasn't before. 
+    GlobalR = conditions['R_Location'] #I'm worried that pins would flip here during restart. Likely a source of error
     
     GridScan(locations,conditions)
     
 except FileNotFoundError:
         
-    print('no saved scan file found. doing nothing')
+    print('No interrupted scans found. Welcome.')
 
 
     
