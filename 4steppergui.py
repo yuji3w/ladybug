@@ -111,7 +111,7 @@ myBigFont = tk.font.Font(family='Helvetica', size=20,weight='bold')
 font.families()
 
 
-#BEGIN ACTUAL CODE
+#Begin defining scanner guts
 
 def restart(): #restart whole pi
     command = "/usr/bin/sudo /sbin/shutdown -r now"
@@ -704,9 +704,10 @@ def ZGet(event):
 
 def GuiScan():
     
+  #that "SCAN!!!" button I never use
     
-    
-    GridScan(XScanMin,XScanMax,YScanMin,YScanMax,ZScanMin,ZScanMax,XScanStep,YScanStep,ZScanStep,RScanNumber)
+    CallforGrid = DefineScan(XScanMin,XScanMax,YScanMin,YScanMax,ZScanMin,ZScanMax,XScanStep,YScanStep,ZScanStep,RScanNumber)
+    GridScan(CallForGrid)
     
 
 def SetR():
@@ -834,12 +835,12 @@ def SetYStep():
 #Begin disgusting block of instructions for keypress. Complicated by fact we want to be able to hold Down.
 #Modified from https://stackoverflow.com/questions/12994796/how-can-i-control-keyboard-repeat-delay-in-a-tkinter-root-window
 #main changes are not displaying the Label and also only enabling key control when checkbox is checked (allow_keypress)
+#works okay for hitton the key once but not so much for holding it down.  
 
 
 def LeftStep(*event): #X
     MoveYForwardSmall()
-    #pyrint('Left')
-
+    
     if LeftLabel._repeat_on:
         win.after(LeftLabel._repeat_freq, LeftStep)
 
@@ -1005,7 +1006,7 @@ def allow_keypress():
         win.unbind('<KeyPress-s>', Sbound)
         win.unbind('<KeyRelease-s>', Sunbound)
 
-#BEGIN WHAT GOES ONSCREEN
+#BEGIN WHAT GOES ONSCREEN. Someone who knows Tkinter, please fix this. I've forgotten what everything does. 
 
 win.title("Raspberry Pi GUI")
 win.geometry('1400x880')
@@ -1159,7 +1160,7 @@ DownLabel = tk.Label(win)
 DownLabel._repeat_freq = int(SLOW*1000*10)  
 DownLabel._repeat_on = True
 
-ALabel = tk.Label(win) #a nd d are rotation
+ALabel = tk.Label(win) #a and d are rotation
 ALabel._repeat_freq = int(SLOW*1000*10)  
 ALabel._repeat_on = True
 
@@ -1202,15 +1203,11 @@ try:
     locations = scan_params[0] #position data
     conditions = scan_params[1] #save location, filetype, resolution, timeout, numfailures
     
-    """because R has no endstop we have to set it to what it was in the scan"""
-    #global GlobalR #I'm not sure why this causes a syntax error, it wasn't before. 
     GlobalR = conditions['R_Location'] #I'm worried that pins would flip here during restart. Likely a source of error
-    
+    #But becasue R has no endstop we have to set it to what it was in the scan
+
     GridScan(locations,conditions)
     
 except FileNotFoundError:
         
-    print('No interrupted scans found. Welcome.')
-
-
-    
+    print('No interrupted scans found. Welcome to the scanner.')
