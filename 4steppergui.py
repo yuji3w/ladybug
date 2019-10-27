@@ -33,7 +33,7 @@ ZScanMin = 0
 ZScanMax = 0
 XScanStep = 100 #amount of motion (in steps) in each dimension in the scan 
 YScanStep = 100 #reasonable default for field of view. Can scretch to 150 for faster scans.
-ZScanStep = 500 
+ZScanStep = 1 #a good default is 500, but this makes it easier to run simple scans with the GUI 
 RScanNumber = 1 #number of rotations per scan, 1 = no rotation
 
 FactorsOf160 = [1,2,4,5,8,10,16,20,32,40,80,160] #for drop down menu of rotations of R since 20 step motor with 8th micro
@@ -347,13 +347,13 @@ def HomeZ():
                     
                     
                     GlobalZ = 0
-                    ZPosition.configure(text="Z: "+str(GlobalZ) + "/3000")
+                    ZPosition.configure(text="Z: "+str(GlobalZ) + "/" + str(ZMax)")
                     return (i) #break away essentially
                 MoveZ(ZBACKWARD,1,FAST)
             #do stepping protocol (second in case button already pressed)
         MoveZ(ZBACKWARD,1,FAST)#dir dis delay
    
-def DefineScan(XMin, XMax, YMin, YMax, ZMin, ZMax, RMin, RMax, XSteps=100, YSteps=100, ZSteps=1, RSteps=1):
+def DefineScan(XMin, XMax, YMin, YMax, ZMin=0, ZMax=0, RMin=0, RMax=0, XSteps=100, YSteps=100, ZSteps=1, RSteps=1):
     """
     Used to generate a dictionary with four keys, each of which maps to a list containing
     the absolute positions of X,Y,Z, and R, for every point of a scan.
@@ -707,6 +707,7 @@ def GuiScan():
   #that "SCAN!!!" button I never use
     
     CallforGrid = DefineScan(XScanMin,XScanMax,YScanMin,YScanMax,ZScanMin,ZScanMax,XScanStep,YScanStep,ZScanStep,RScanNumber)
+                                        
     GridScan(CallForGrid)
     
 
