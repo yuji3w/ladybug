@@ -25,16 +25,19 @@ GlobalZ = 0 #up and down
 GlobalR = 0 #Rotation. 
 
 #These are scan parameters intended to be set by the GUI and can otherwise be ignored
+
 XScanMin = 0
 XScanMax = 0
 YScanMin = 0
 YScanMax = 0
 ZScanMin = 0
 ZScanMax = 0
+RScanMin = 0
+RScanMax = 160 #This is a temporary stopgap from changing how scanning works.
 XScanStep = 100 #amount of motion (in steps) in each dimension in the scan 
 YScanStep = 100 #reasonable default for field of view. Can scretch to 150 for faster scans.
 ZScanStep = 1 #a good default is 500, but this makes it easier to run simple scans with the GUI 
-RScanNumber = 1 #number of rotations per scan, 1 = no rotation
+RScanNumber = 1 #number of rotations per scan, 1 = no rotation. Naming scheme holdoff, will be fixed later
 
 FactorsOf160 = [1,2,4,5,8,10,16,20,32,40,80,160] #for drop down menu of rotations of R since 20 step motor with 8th micro
  
@@ -133,7 +136,7 @@ def MoveX(direction,numsteps,delay):
     
     global GlobalX
     
-    if direction == XForward:
+    if direction == XFORWARD:
         GlobalX += numsteps
     else:
         GlobalX -= numsteps
@@ -174,7 +177,7 @@ def MoveY(direction,numsteps,delay):
     
     global GlobalY
     
-    if direction == YForward:  
+    if direction == YFORWARD:  
         GlobalY += numsteps
     else:
         GlobalY -= numsteps
@@ -288,7 +291,7 @@ def HomeX():
         
         
         if CheckPress(XLimit): #button pressed once. need to move forward and back again to ensure correct start position
-            MoveX(XForward,300,SLOW) #move forward
+            MoveX(XFORWARD,300,SLOW) #move forward
             for j in range(350): #move back and check again
                 if CheckPress(XLimit): #again
                     
@@ -325,9 +328,11 @@ def HomeY():
         MoveY(YBACKWARD,1,FAST)#dir dis delay
 
 def HomeZ():
- """This is a bit different than X and Y, because the optical switch is tripped about a thousand steps up from the true bottom!
+    
+    '''This is a bit different than X and Y, because the optical switch is tripped about a thousand steps up from the true bottom!
  It's more hardcoded with actual numbers. 
- This whole procedure should be replaced with a substituted-in copy of HomeY or X if using a regular physical switch.  """
+ This whole procedure should be replaced with a substituted-in copy of HomeY or X if using a regular physical switch.'''
+
     global GlobalZ
     
     for i in range(ZMax + 500): 
@@ -347,7 +352,7 @@ def HomeZ():
                     
                     
                     GlobalZ = 0
-                    ZPosition.configure(text="Z: "+str(GlobalZ) + "/" + str(ZMax)")
+                    ZPosition.configure(text="Z: "+str(GlobalZ) + "/" + str(ZMax))
                     return (i) #break away essentially
                 MoveZ(ZBACKWARD,1,FAST)
             #do stepping protocol (second in case button already pressed)
@@ -423,8 +428,8 @@ def DefineScan(XMin, XMax, YMin, YMax, ZMin=0, ZMax=0, RMin=0, RMax=0, XSteps=10
 
 
 def GridScan(ScanLocations,conditions='default'):
- 
- """the main loop that carries out an actual scan. Accepts the dictionary output of DefineScan, and an optional dictionary of conditions,
+    
+    """the main loop that carries out an actual scan. Accepts the dictionary output of DefineScan, and an optional dictionary of conditions,
  which is necessary when performing a restart in the middle of the scan. """
      
     XCoord = ScanLocations['X'] #simple list of axis location at each point in scan
@@ -462,7 +467,7 @@ def GridScan(ScanLocations,conditions='default'):
     NumberOfRotations = len(set(RCoord)) #1 means no rotation
     stepsPerRotation = ((max(RCoord)-min(RCoord))/len(set(RCoord)))
     
-    print("Stepping {} per image".format(str(StepsPerRotation))) #for debugging
+    #print("Rotating {} per image".format(str(StepsPerRotation))) #for debugging
     print("has failed and restarted {} times so far".format(str(num_failures)))
     
     #Initialize locations
@@ -705,8 +710,13 @@ def ZGet(event):
 def GuiScan():
     
   #that "SCAN!!!" button I never use
+    #Note, just noticed that this isn't compatible with the new absolute value convention (being able to do partial R rotations).
+    #Fix will be later; temporary is passing RMin = 0 RMax = StepsPerRotation.
+    #and Rsteps = StepsPerRotation/RScanNumber
+    RScanStep = 160/RScanNumber #Temporary conversion from number of times to move R, with amount of steps moved each time R is moved.
+
     
-    CallforGrid = DefineScan(XScanMin,XScanMax,YScanMin,YScanMax,ZScanMin,ZScanMax,XScanStep,YScanStep,ZScanStep,RScanNumber)
+    CallForGrid = DefineScan(XScanMin,XScanMax,YScanMin,YScanMax,ZScanMin,ZScanMax,RScanMin,StepsPerRotation,XScanStep,YScanStep,ZScanStep,RScanStep)
                                         
     GridScan(CallForGrid)
     
@@ -820,7 +830,7 @@ def SetZUpperBound():
 
 def SetZStep():
     global ZScanStep
-    ZScanStep = GlobalZ #Yes I know I should be shot but this makes it more minimal
+    ZScanStep = GlobalZ #Yes I know I should be shot but this makes it more minimal. If want 100 stepsize, go to location 100 and press the button!
     print("Step size for Z has been set to {}".format(ZScanStep))
 
 def SetXStep():
