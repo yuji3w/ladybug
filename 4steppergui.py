@@ -16,7 +16,7 @@ import pickle #for saving scan data and resuming
 
 GPIO.setmode(GPIO.BOARD) #IMPORTANT! Physical pin layout
 
-#Distances from home position in steps for each motor. 
+     #Distances from home position in steps for each motor. 
 #Starts at "0" so if you don't have any switches just move them there before running the program. 
 
 GlobalX = 0 #"Top" motor
@@ -30,12 +30,12 @@ XScanMin = 0
 XScanMax = 0
 YScanMin = 0
 YScanMax = 0
-ZScanMin = 0
+ZScanMin = 0                                                                                                                                                                                                                                                                                                                                    
 ZScanMax = 0
 RScanMin = 0
 RScanMax = 160 #This is a temporary stopgap from changing how scanning works.
-XScanStep = 100 #amount of motion (in steps) in each dimension in the scan 
-YScanStep = 100 #reasonable default for field of view. Can scretch to 150 for faster scans.
+XScanStep = 150 #amount of motion (in steps) in each dimension in the scan 
+YScanStep = 150 #reasonable default for field of view. Can scretch to 150 for faster scans.
 ZScanStep = 1 #a good default is 500, but this makes it easier to run simple scans with the GUI 
 RScanNumber = 1 #number of rotations per scan, 1 = no rotation. Naming scheme holdoff, will be fixed later
 
@@ -46,22 +46,22 @@ FactorsOf160 = [1,2,4,5,8,10,16,20,32,40,80,160] #for drop down menu of rotation
 YDIR = 26 #Sample AKA bottom direction pin
 XDIR = 18 #Camera AKA top
 ZDIR = 40 
-RDIR = 19 
+RDIR = 21 
 
 YSTEP = 24 #Stepping pins
 XSTEP = 16
 ZSTEP = 38
-RSTEP = 23
+RSTEP = 19
 
-BEEP = 33 #GPIO pin to beep for indications (thanks Yujie). Can also put an LED here or something else
+BEEP = 35 #GPIO pin to beep for indications (thanks Yujie). Can also put an LED here or something else
 
-XLimit = 7 #Mechanical limitswitch pin input
+XLimit = 11 #Mechanical limitswitch pin input
 YLimit = 13
 ZLimit = 15 #Optical switch pin input!
 
 
 XMax = 1800 #max range in 8th microsteps. Affected by choice of carriage
-YMax = 1800
+YMax = 2000
 ZMax = 3000
 StepsPerRotation = 160 #for 8th microstepping on the R axis we have
 
@@ -101,7 +101,7 @@ GPIO.setup(RSTEP, GPIO.OUT)
 #GPIO input setup for limit switches
 GPIO.setup(YLimit, GPIO.IN, pull_up_down=GPIO.PUD_UP) 
 GPIO.setup(XLimit, GPIO.IN, pull_up_down=GPIO.PUD_UP) 
-GPIO.setup(ZLimit, GPIO.IN) #no pull up! Direct sense with optical switch.
+GPIO.setup(ZLimit, GPIO.IN, pull_up_down=GPIO.PUD_UP) #no pull up! Direct sense with optical switch.
 
 
 #Start Tkinter GUI window. More Tkinter way below. 
@@ -116,6 +116,75 @@ font.families()
 
 #Begin defining scanner guts
 
+def beep(duration = 0.2, repeat = 1):
+    
+    for i in range (repeat):
+        GPIO.output(BEEP,GPIO.HIGH)
+        time.sleep(duration/2)
+        GPIO.output(BEEP,GPIO.LOW)
+        time.sleep(duration/2)
+
+def ExampleScan():
+    #rotation acting strange!
+    ScanCoord = DefineScan(800,1000,1000,1200)
+    GridScan(ScanCoord)
+
+def DemoMove(speed=1,delay = 1):
+    #moves motors in a sequence for demo purposes
+    #speed is multiplier, delay in seconds between routines
+    for i in range(700):
+        MoveX(XFORWARD,2,FASTERER/speed)
+        MoveY(YFORWARD,2,FASTERER/speed)
+        MoveZ(ZFORWARD,4,FASTERER/speed)
+        if i%5 == 0:
+            
+            MoveR(RFORWARD,2,FASTERER/speed)
+
+    time.sleep(delay/2)
+    
+    for i in range(700):
+        MoveX(XBACKWARD,2,FASTERER/speed)
+        MoveY(YBACKWARD,2,FASTERER/speed)
+        MoveZ(ZBACKWARD,4,FASTERER/speed)
+        if i%5 == 0:
+            
+            MoveR(RBACKWARD,2,FASTERER/speed)
+            
+    time.sleep(delay)
+    
+    MoveX(XFORWARD,1500,FASTERER/speed)
+    time.sleep(0.1)
+    MoveX(XBACKWARD, 1500, FASTERER/speed)
+    time.sleep(0.1)
+    MoveX(XFORWARD,800,FASTERER/speed)
+    
+    time.sleep(delay/2)
+    
+    MoveY(YFORWARD, 1500, FASTERER/speed)
+    time.sleep(0.1)
+    MoveY(YBACKWARD, 1500, FASTERER/speed)
+    time.sleep(0.1)
+    MoveY(YFORWARD, 1400, FASTERER/speed)
+    
+    for i in range(2):
+        MoveZ(ZFORWARD, 2800, FASTERER/2/speed)
+        MoveZ(ZBACKWARD, 2800, FASTERER/2/speed)
+        
+    MoveZ(ZFORWARD, 2800, FASTER/speed)
+    MoveZ(ZBACKWARD, 2800, FASTER/speed)
+    
+    for i in range(1):
+        MoveR(RFORWARD, 320, FAST/speed)
+        time.sleep(delay/2)
+        MoveR(RBACKWARD, 320, FAST/speed)
+    time.sleep(delay/2)    
+    MoveR(RFORWARD, 800, FAST/speed)
+    
+    time.sleep(delay)
+    HomeX()
+    HomeY()
+    beep(0.25,2)
+    
 def restart(): #restart whole pi
     command = "/usr/bin/sudo /sbin/shutdown -r now"
     process = subprocess.Popen(command.split(), stdout=subprocess.PIPE)
@@ -303,7 +372,7 @@ def HomeX():
                     return (i) #break away essentially
                 MoveX(XBACKWARD,1,SLOW)
             #do stepping protocol (placed second in case button already pressed)
-        MoveX(XBACKWARD,1,FAST)#dir dis delay
+        MoveX(XBACKWARD,1,FASTER)#dir dis delay
 
 def HomeY():
     global GlobalY
@@ -325,7 +394,7 @@ def HomeY():
                     return (i) #break away essentially
                 MoveY(YBACKWARD,1,SLOW)
             #do stepping protocol (placed second in case button already pressed)
-        MoveY(YBACKWARD,1,FAST)#dir dis delay
+        MoveY(YBACKWARD,1,FASTER)#dir dis delay
 
 def HomeZ():
     
@@ -441,7 +510,7 @@ def GridScan(ScanLocations,conditions='default'):
     
     if conditions == 'default': #usually the case!
         save_location = filedialog.askdirectory() #pop up screen asking where to save files like flash drive
-        filetype = ".png" #jpgs are honestly ok too and might make things easier/faster
+        filetype = ".jpg" #jpgs are honestly ok too and might make things easier/faster #NOTE CHANGED FROM PNG DEC 16 2019
         resolution = "640x480" #for crappy microscope, not necessarily reliable, though
         timeallowed = 30 #number of seconds you have to save the scan if the USB is failing before auto restart!
         num_failures = 0 #times restarted so far
@@ -500,7 +569,7 @@ def GridScan(ScanLocations,conditions='default'):
         ZGoTo(int(ZCoord[i]))
         RGoTo(int(RCoord[i]))
             
-        time.sleep(0.1) #VIBRATION CONTROL! 
+        time.sleep(0.2) #VIBRATION CONTROL! (increased from 0.1 to 0.2 for high res)
                
             
             
@@ -714,7 +783,7 @@ def GuiScan():
     #Fix will be later; temporary is passing RMin = 0 RMax = StepsPerRotation.
     #and Rsteps = StepsPerRotation/RScanNumber
     RScanStep = 160/RScanNumber #Temporary conversion from number of times to move R, with amount of steps moved each time R is moved.
-
+    print(RScanStep)
     
     CallForGrid = DefineScan(XScanMin,XScanMax,YScanMin,YScanMax,ZScanMin,ZScanMax,RScanMin,StepsPerRotation,XScanStep,YScanStep,ZScanStep,RScanStep)
                                         
