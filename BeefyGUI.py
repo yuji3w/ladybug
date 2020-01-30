@@ -73,7 +73,7 @@ XRange = 200 #in millimeters, approximate
 XStepsPerMM = XMax/XRange
 YRange = 155.5 #did not actually measure this, just pretended it's same as X
 ZRange = 100 #did not measure, depends on carriage assembly. Extrapolated from steps more milimeter
-ZStepsPerMM = 200
+ZStepsPerMM = 120 #measured at 200 but this works better
 
 TRadius = 20 #should later have an option to offset with sample diameter
 
@@ -698,22 +698,43 @@ def MoveR(direction,numsteps,delay):
 
     #insert counting information here
 
-def MoveT(direction,numsteps,delay):
+def MoveT(direction,numsteps,delay,ZXCorrect=True):
     #tilt motor. Should probably have a way to initialize and prevent going over range
     GPIO.output(TDIR,direction)
     global GlobalT
+    CorrectZAfter = False
     
+    if ZXCorrect == True: #dynamically correct X and Z position. Maybe should be in TGoTo instead
+        initial = GlobalT
+        if direction == TFORWARD: #don't judge me repeating this twice ok
+            final = GlobalT + numsteps
+        else:
+            final = GlobalT - numsteps
+        
+        Corrected_X, Corrected_Z = TiltCorrection(initial,final)
+        
+        XGoTo(Corrected_X)
+        
+        if Corrected_Z <=GlobalZ: #if Z goes down, move Z first then tilt. 
+            ZGoTo(Corrected_Z)
+        else: CorrectZAfter = True #correct Z after tilt if moving up
+        
+        #actually move tilt now
+        
     for i in range(numsteps):
         GPIO.output(TSTEP,GPIO.HIGH)
         time.sleep(delay)
         GPIO.output(TSTEP,GPIO.LOW)
         
-    
+    if CorrectZAfter:
+        ZGoTo(Corrected_Z)
     if direction == TFORWARD:
         GlobalT += numsteps
     else:
         GlobalT -= numsteps    
     #more stuff should go here at some point
+        
+
 
 def MoveZ(direction,numsteps,delay):
     '''parent function for Z. This version has no sleep pin enable/disable:
