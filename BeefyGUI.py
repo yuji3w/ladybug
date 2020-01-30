@@ -63,12 +63,23 @@ SELFIE = 8
 
 #FOR FLASHFORGE FINDER WITH KES400A and original bed
 
-XMax = 9000 #max range. Affected by choice of sled
-YMax = 6800
-ZMax = 29000 #my goodness. Approximate, want to be conservative to not crush my voice coils.
+XMax = 9250 #max range. Affected by choice of sled
+YMax = 7200
+ZMax = 20000 #my goodness. Approximate, want to be conservative to not crush my voice coils. #29000 with no giant motor setup
+
+
+#steps per mm needed for calculations about correct for tilt
+XRange = 200 #in millimeters, approximate
+XStepsPerMM = XMax/XRange
+YRange = 155.5 #did not actually measure this, just pretended it's same as X
+ZRange = 100 #did not measure, depends on carriage assembly. Extrapolated from steps more milimeter
+ZStepsPerMM = 200
+
+TRadius = 20 #should later have an option to offset with sample diameter
 
 StepsPerRotation = 4096 #for 8th microstepping on the R axis we have (160 on original)
 StepsPerTilt = 1600 #full tilt revolution, probably use half this
+RadiansPerStep = (2*math.pi)/StepsPerTilt
 
 XLimit = 11 #Mechanical limitswitch pin input
 YLimit = 13
@@ -88,8 +99,8 @@ ZBACKWARD = 1
 RFORWARD = 1 #To keep naming scchhhomeme. But we'll consider forward as clockwise if referenced
 RBACKWARD = 0
 
-TFORWARD = 0
-TBACKWARD = 1
+TFORWARD = 1
+TBACKWARD = 0
 
  #made faster for finder
 FASTERER = 0.0002
@@ -124,6 +135,44 @@ win = tk.Tk()
 myFont = tk.font.Font(family='Helvetica', size=12, weight='bold')
 myBigFont = tk.font.Font(family='Helvetica', size=20,weight='bold')
 font.families()
+
+def TiltCorrection(Initial,Final,X='default',Z='default'):
+    """When we tilt our object, we are also translating it in the Z and X directions.
+    this function takes the initial and final tilt position (in steps),
+    converts that to a change in angle,
+    and then determines the X and Y translation with trig.
+    Function returns a CORRECTION value in X and Z that must be applied keep the object in focus. """
+    
+    #flat is pointed to the left
+    
+    if X == 'default': #cannot assign globalX in function name or it happens at runtime
+        X = GlobalX
+    if Z == 'default':
+        Z = GlobalZ
+        
+    Z_Initial = round(TRadius*math.sin(RadiansPerStep*(Initial)),4)
+    X_Initial = round(TRadius*math.cos(RadiansPerStep*(Initial)),4)
+    
+    Z_Final = round(TRadius*math.sin(RadiansPerStep*(Final)),4)
+    X_Final = round(TRadius*math.cos(RadiansPerStep*(Final)),4)
+    
+    Z_Change = Z_Final-Z_Initial #in Millimeters
+    X_Change = X_Final-X_Initial
+    
+    try: 
+        Z_Change_Steps = round(ZStepsPerMM*Z_Change)
+        X_Change_Steps = -1 * round(XStepsPerMM*X_Change) #negative because starting from the left
+    except ZeroDivisionError:
+        print ("those are the saaaaaaame")
+        
+        return False
+    
+    
+    Corrected_X = X - X_Change_Steps
+    
+    Corrected_Z = Z - Z_Change_Steps
+        
+    return Corrected_X,Corrected_Z
 
 def AnalogGet(samples=1,Gain=GAIN): #returns differential analog output from photodiode
     Analog_List = []
@@ -659,6 +708,11 @@ def MoveT(direction,numsteps,delay):
         time.sleep(delay)
         GPIO.output(TSTEP,GPIO.LOW)
         
+    
+    if direction == TFORWARD:
+        GlobalT += numsteps
+    else:
+        GlobalT -= numsteps    
     #more stuff should go here at some point
 
 def MoveZ(direction,numsteps,delay):
