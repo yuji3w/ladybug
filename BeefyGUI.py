@@ -21,8 +21,8 @@ GAIN = 16  #1,2,4,68,16. We have a small collection area PD
 
 GPIO.setmode(GPIO.BOARD) #IMPORTANT! Physical pin layout
 
-#Distances from home position in steps for each motor. 
-#Starts at "0" so if you don't have any switches just move them there before running the program. 
+#Distances from home position in steps for each motor.
+#Starts at "0" so if you don't have any switches just move them there before running the program.
 
 GlobalX = 0 #left and right (on finder)
 GlobalY = 0 #towards and away from you (on finder)
@@ -30,7 +30,11 @@ GlobalZ = 0
 GlobalR = 0 #keep same naming scheme, but R = rotation
 GlobalT = 0 #Tilt motor!
 
-#Note that resuming a scan is harder (no switches to reset) if using R and T. 
+TCenter = 3800 #X location directly above tilt axis. Determine experimentally
+YCenter = 3800 #Same for Y for convenience
+GlobalTOffset = 0-TCenter #updated with moving X for dynamic 5 axis adjustment
+
+#Note that resuming a scan is harder (no switches to reset) if using R and T.
 
 #These are scan parameters intended to be set by the GUI and can otherwise be ignored
 
@@ -40,7 +44,7 @@ YScanMin = 0
 YScanMax = 0
 ZScanMin = 0
 ZScanMax = 0
-XScanStep = 100 #default step parameters, 
+XScanStep = 100 #default step parameters,
 YScanStep = 100
 ZScanStep = 500
 RScanNumber = 1 #needs consolidation with absolute value positioning system. kind of a mess
@@ -68,7 +72,7 @@ SELFIE = 8
 
 #FOR FLASHFORGE FINDER WITH KES400A and original bed
 
-TRadius = 20 #should later have an option to offset with sample diameter
+TRadius = 20 #default value, generally use calculated dynamically
 
 StepsPerRotation = 4096 #for 8th microstepping on the R axis we have (160 on original)
 StepsPerTilt = 1600 #full tilt revolution, probably use half this
@@ -78,14 +82,12 @@ RadiansPerStep = (2*math.pi)/StepsPerTilt
 XMax = 9250 #max range. Affected by choice of sled
 YMax = 7200
 ZMax = 29000 #my goodness. Approximate, want to be conservative to not crush my voice coils. #29000 with no giant motor setup
-RMax = StepsPerRotation 
+RMax = StepsPerRotation
 
 #steps per mm needed for calculations about correct for tilt
-XRange = 200 #in millimeters, approximate
-XStepsPerMM = XMax/XRange
-YRange = 155.5 #did not actually measure this, just pretended it's same as X
-ZRange = 100 #did not measure, depends on carriage assembly. Extrapolated from steps more milimeter
-ZStepsPerMM = 120 #measured at 200 but this works better
+
+XStepsPerMM = 47 #Measured using USB microscope close to 46.25 measured by hand
+ZStepsPerMM = 200
 
 
 XLimit = 11 #Mechanical limitswitch pin input
@@ -143,42 +145,51 @@ myFont = tk.font.Font(family='Helvetica', size=12, weight='bold')
 myBigFont = tk.font.Font(family='Helvetica', size=20,weight='bold')
 font.families()
 
-def TiltCorrection(Initial,Final,X='default',Z='default'):
+def TiltCorrection(Initial,Final,Radius ='dynamic',X='default',Z='default'):
     """When we tilt our object, we are also translating it in the Z and X directions.
     this function takes the initial and final tilt position (in steps),
     converts that to a change in angle,
-    and then determines the X and Y translation with trig.
-    Function returns a CORRECTION value in X and Z that must be applied keep the object in focus. """
-    
+    and then determines the X and Z translation with trig.
+    Function returns what the new X and Z values SHOULD BE to retain focus.
+
+    Made dynamic, currently not symmetric forwards and backwards.
+    Have to think about what to do for fact that rotary motor shaft is not centered."""
+
+
+
     #flat is pointed to the left
-    
+
     if X == 'default': #cannot assign globalX in function name or it happens at runtime
         X = GlobalX
     if Z == 'default':
         Z = GlobalZ
-        
-    Z_Initial = round(TRadius*math.sin(RadiansPerStep*(Initial)),4)
-    X_Initial = round(TRadius*math.cos(RadiansPerStep*(Initial)),4)
-    
-    Z_Final = round(TRadius*math.sin(RadiansPerStep*(Final)),4)
-    X_Final = round(TRadius*math.cos(RadiansPerStep*(Final)),4)
-    
+    if Radius == 'dynamic': #keeping track dynamically as opposed to a set value
+        global GlobalTOffset
+        GlobalTOffset = X - TCenter
+        TRadius = GlobalTOffset/XStepsPerMM
+
+    Z_Initial = round(TRadius*math.sin(RadiansPerStep*(Initial)),6)
+    X_Initial = round(TRadius*math.cos(RadiansPerStep*(Initial)),6)
+
+    Z_Final = round(TRadius*math.sin(RadiansPerStep*(Final)),6)
+    X_Final = round(TRadius*math.cos(RadiansPerStep*(Final)),6)
+
     Z_Change = Z_Final-Z_Initial #in Millimeters
     X_Change = X_Final-X_Initial
-    
-    try: 
+
+    try:
         Z_Change_Steps = round(ZStepsPerMM*Z_Change)
         X_Change_Steps = -1 * round(XStepsPerMM*X_Change) #negative because starting from the left
     except ZeroDivisionError:
         print ("those are the saaaaaaame")
-        
+
         return False
-    
-    
+
+
     Corrected_X = X - X_Change_Steps
-    
+
     Corrected_Z = Z - Z_Change_Steps
-        
+        #should maybe keep track of missing steps from rounding
     return Corrected_X,Corrected_Z
 
 def AnalogGet(samples=1,Gain=GAIN): #returns differential analog output from photodiode
@@ -436,7 +447,7 @@ def GridScan(ScanLocations,conditions='default'):
 
 
 
-        #changed from original to add more zfill and no "of" 
+        #changed from original to add more zfill and no "of"
         name = "X" + str(XCoord[i]).zfill(5) + "Y" + str(YCoord[i]).zfill(5) + "Z" + str(ZCoord[i]).zfill(5) + "R" + str(RCoord[i]).zfill(4) + filetype
 
         """begin filesaving block"""
@@ -622,6 +633,7 @@ def MoveX(direction,numsteps,delay):
 
     XPosition.configure(text="X: "+str(GlobalX) + "/" + str(XMax)) #updates the global position on the screen. Not a good way to do it!
 
+
 def XGoTo(XDest, XMin=0):
     """checks the place is valid and then calls MoveX appropriately.
     Should be upgradable to have boundaries, aka min and max."""
@@ -707,7 +719,7 @@ def MoveR(direction,numsteps,delay):
         GlobalR += numsteps
     else:
         GlobalR -= numsteps
-        
+
 
 
 def RGoTo(RDest, RMin=0):
@@ -728,42 +740,43 @@ def RGoTo(RDest, RMin=0):
         print ('Destination out of range')
 
 
-def MoveT(direction,numsteps,delay,ZXCorrect=True):
+def MoveT(direction,numsteps,delay,ZXCorrect=False):
     #tilt motor. Should probably have a way to initialize and prevent going over range
     GPIO.output(TDIR,direction)
     global GlobalT
+
     CorrectZAfter = False
-    
+
     if ZXCorrect == True: #dynamically correct X and Z position. Maybe should be in TGoTo instead
         initial = GlobalT
         if direction == TFORWARD: #don't judge me repeating this twice ok
             final = GlobalT + numsteps
         else:
             final = GlobalT - numsteps
-        
+
         Corrected_X, Corrected_Z = TiltCorrection(initial,final)
-        
+
         XGoTo(Corrected_X)
-        
-        if Corrected_Z <=GlobalZ: #if Z goes down, move Z first then tilt. 
+
+        if Corrected_Z <=GlobalZ: #if Z goes down, move Z first then tilt.
             ZGoTo(Corrected_Z)
         else: CorrectZAfter = True #correct Z after tilt if moving up
-        
+
         #actually move tilt now
-        
+
     for i in range(numsteps):
         GPIO.output(TSTEP,GPIO.HIGH)
         time.sleep(delay)
         GPIO.output(TSTEP,GPIO.LOW)
-        
+
     if CorrectZAfter:
         ZGoTo(Corrected_Z)
     if direction == TFORWARD:
         GlobalT += numsteps
     else:
-        GlobalT -= numsteps    
+        GlobalT -= numsteps
     #more stuff should go here at some point
-        
+
 
 
 def MoveZ(direction,numsteps,delay):
@@ -946,7 +959,7 @@ def MoveZUpSmall():
     print("Z moved up a little!")
 
 def MoveRCWSmall():
-    #cw when staring down at spindle or object 
+    #cw when staring down at spindle or object
     MoveR(RFORWARD, 40, SLOW) #increased to 40 for finder Beefy
     print("You rotated something clockwise a bit!")
 
@@ -956,10 +969,10 @@ def MoveRCCWSmall(): #counterclockwise
 
 def MoveTUpSmall():
     #tilt 5th axis added jan 28 2020
-    MoveT(TFORWARD, 8, SLOW) 
+    MoveT(TFORWARD, 8, SLOW)
     print("You tilted something up a bit!")
 
-def MoveTDownSmall(): 
+def MoveTDownSmall():
     MoveT(TBACKWARD, 8, SLOW)
     print("You tilted something down a bit!")
 
