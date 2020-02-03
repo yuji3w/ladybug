@@ -1,41 +1,46 @@
 #!/usr/bin/env python3
 
-from numpy import *
-import random
+from numpy import * #for generating scan parameters
+import random #for repeatability tests
 import time
 import math
 import os
-import tkinter as tk
+import tkinter as tk #contains GUI, can be removed if converted to headless
 from tkinter import font
 from tkinter import filedialog
 import RPi.GPIO as GPIO
 import subprocess #For taking a picture with fswebcam
 import sys
 import select #for timeouts and buzzing when usb gets disconnect
-import pickle
-#import Adafruit_ADS1x15
+import pickle #for saving scan data and resuming
+
+#import Adafruit_ADS1x15 #for laser scanning analog input
 
 #adc = Adafruit_ADS1x15.ADS1115() #our analog input
 GAIN = 16  #1,2,4,68,16. We have a small collection area PD
 
-GPIO.setmode(GPIO.BOARD)
+GPIO.setmode(GPIO.BOARD) #IMPORTANT! Physical pin layout
 
-GlobalX = 0 #X distance from home in steps
-GlobalY = 0
+#Distances from home position in steps for each motor. 
+#Starts at "0" so if you don't have any switches just move them there before running the program. 
+
+GlobalX = 0 #left and right (on finder)
+GlobalY = 0 #towards and away from you (on finder)
 GlobalZ = 0
 GlobalR = 0 #keep same naming scheme, but R = rotation
 GlobalT = 0 #Tilt motor!
 
-#Note that upon resuming a scan we have to reset this to R we left off, same with T. 
+#Note that resuming a scan is harder (no switches to reset) if using R and T. 
 
-#These are set by the GUI and passed off to scan configuration
+#These are scan parameters intended to be set by the GUI and can otherwise be ignored
+
 XScanMin = 0
 XScanMax = 0
 YScanMin = 0
 YScanMax = 0
 ZScanMin = 0
 ZScanMax = 0
-XScanStep = 100 #A good default
+XScanStep = 100 #default step parameters, 
 YScanStep = 100
 ZScanStep = 500
 RScanNumber = 1 #needs consolidation with absolute value positioning system. kind of a mess
@@ -63,10 +68,17 @@ SELFIE = 8
 
 #FOR FLASHFORGE FINDER WITH KES400A and original bed
 
+TRadius = 20 #should later have an option to offset with sample diameter
+
+StepsPerRotation = 4096 #for 8th microstepping on the R axis we have (160 on original)
+StepsPerTilt = 1600 #full tilt revolution, probably use half this
+RadiansPerStep = (2*math.pi)/StepsPerTilt
+
+
 XMax = 9250 #max range. Affected by choice of sled
 YMax = 7200
-ZMax = 20000 #my goodness. Approximate, want to be conservative to not crush my voice coils. #29000 with no giant motor setup
-
+ZMax = 29000 #my goodness. Approximate, want to be conservative to not crush my voice coils. #29000 with no giant motor setup
+RMax = StepsPerRotation 
 
 #steps per mm needed for calculations about correct for tilt
 XRange = 200 #in millimeters, approximate
@@ -75,11 +87,6 @@ YRange = 155.5 #did not actually measure this, just pretended it's same as X
 ZRange = 100 #did not measure, depends on carriage assembly. Extrapolated from steps more milimeter
 ZStepsPerMM = 120 #measured at 200 but this works better
 
-TRadius = 20 #should later have an option to offset with sample diameter
-
-StepsPerRotation = 4096 #for 8th microstepping on the R axis we have (160 on original)
-StepsPerTilt = 1600 #full tilt revolution, probably use half this
-RadiansPerStep = (2*math.pi)/StepsPerTilt
 
 XLimit = 11 #Mechanical limitswitch pin input
 YLimit = 13
@@ -369,7 +376,7 @@ def GridScan(ScanLocations,conditions='default'):
 
     if conditions == 'default':
         save_location = filedialog.askdirectory()
-        filetype = ".png"
+        filetype = ".jpg"
         resolution = "640x480" #fswebcam adjusts to be higher at least with alternate microscope I have
         timeallowed = 5 #number of seconds you have to save the scan.
         num_failures = 0
@@ -423,14 +430,14 @@ def GridScan(ScanLocations,conditions='default'):
         XGoTo(int(XCoord[i]))
         YGoTo(int(YCoord[i]))
         ZGoTo(int(ZCoord[i]))
-        #RGoTo(int(RCoord[i]))
+        RGoTo(int(RCoord[i]))
 
         time.sleep(0.1) #vibration control.
 
 
 
-
-        name = "X" + str(XCoord[i]).zfill(4) + "Y" + str(YCoord[i]).zfill(4) + "Z" + str(ZCoord[i]).zfill(4) + "R" + str(RCoord[i]).zfill(3) + "of" + str(NumberOfRotations).zfill(3) + filetype
+        #changed from original to add more zfill and no "of" 
+        name = "X" + str(XCoord[i]).zfill(5) + "Y" + str(YCoord[i]).zfill(5) + "Z" + str(ZCoord[i]).zfill(5) + "R" + str(RCoord[i]).zfill(4) + filetype
 
         """begin filesaving block"""
 
@@ -696,7 +703,30 @@ def MoveR(direction,numsteps,delay):
         time.sleep(delay)
         GPIO.output(RSTEP,GPIO.LOW)
 
-    #insert counting information here
+    if direction == RFORWARD:
+        GlobalR += numsteps
+    else:
+        GlobalR -= numsteps
+        
+
+
+def RGoTo(RDest, RMin=0):
+    """checks the place is valid and then calls MoveR appropriately.
+    Should be upgradable to have boundaries, aka min and max."""
+    global GlobalR
+    global RMax
+    if not isinstance(RDest,int):
+        return ('integers only dingus') #this is not good practice right
+
+    if RDest <= RMax and RDest >= RMin:
+        distance = RDest - GlobalR
+        if distance > 0: #forward
+            MoveR(RFORWARD,distance,FAST)
+        else:
+            MoveR(RBACKWARD,abs(distance),FAST)
+    else:
+        print ('Destination out of range')
+
 
 def MoveT(direction,numsteps,delay,ZXCorrect=True):
     #tilt motor. Should probably have a way to initialize and prevent going over range
