@@ -234,7 +234,40 @@ def TakeSelfie():
 
 
 
+def CalculateOverlap(XSteps,YSteps,PixelsPerStep=1,XWidth=640,YHeight=480):
+    #basic function gives percent overlap based on x/y pixels per step (same value if straight scope)
+    #generally wasteful to exceed 50 percent overlap
+    
+    #3750 =~ 4000 steps away from object (19 =~20mm) 1 to 1 pixels per step with dinolite basic 
+    #500 steps or 2.5ish mm is 1.5 pixels/step
+    
+    #250 steps away (2nd zoom mode only) is 7.5 pixels/step 
+    
+    XOverlap = ((XWidth-XSteps*PixelsPerStep)/XWidth)*100 #in percent
+    YOverlap = ((YHeight-YSteps*PixelsPerStep)/YHeight)*100
+    
+    print ("X overlap is {}%, Y Overlap is {} if {} Pixels Per Step displacement".format(XOverlap,YOverlap,PixelsPerStep))
+    
+    return (XOverlap,YOverlap,PixelsPerStep)
 
+def CalculateSpeed(distance):
+    #Just returns my terribly named speeds by distance traveled
+    #mostly in order to reduce vibrations for short distances
+    
+    if distance >= 1000:
+        SPEED = FASTERER    
+    elif 500 <= distance < 1000:
+        SPEED = FASTER
+    elif 150 <= distance < 500:
+        SPEED = FAST
+    elif 50 <= distance < 150:
+        SPEED = SLOW
+    else:
+        SPEED = SLOWER
+        
+    return (SPEED)
+    
+    
 def DefineScan(XMin, XMax, YMin, YMax, ZMin, ZMax, RMin, RMax, XSteps=100, YSteps=100, ZSteps=1, RSteps=1):
     """core from stack exchange. https://stackoverflow.com/questions/20872912/raster-scan-pattern-python
     modified october 11 2018 to include Z and R, meaning R is now set in absolute positions
@@ -303,6 +336,13 @@ def DefineScan(XMin, XMax, YMin, YMax, ZMin, ZMax, RMin, RMax, XSteps=100, YStep
             NewNewRScan.append(rgrid[i])
 
     ScanLocations = {'X':NewNewXScan,'Y':NewNewYScan,'Z':NewNewZScan,'R':NewNewRScan}
+    
+    
+    CalculateOverlap(XSteps,YSteps,PixelsPerStep=1)
+    
+    print("{} images".format(len(NewNewXScan)))
+    
+    
     return(ScanLocations)
 
 def LaserScan(ScanLocations, Adjust_Z=True, Sample_Number = 5, Z_Tolerance=20):
@@ -413,7 +453,7 @@ def GridScan(ScanLocations,conditions='default'):
     NumberOfRotations = len(set(RCoord))
     stepsPerRotation = ((max(RCoord)-min(RCoord))/len(set(RCoord)))
 
-    print("Stepping {} per image".format(str(StepsPerRotation))) #just for debugging
+    #print("Stepping {} per image".format(str(StepsPerRotation))) #just for debugging
     print("has failed and restarted {} times so far".format(str(num_failures)))
 
     XGoTo(int(XCoord[0]))
@@ -428,7 +468,7 @@ def GridScan(ScanLocations,conditions='default'):
         if i % 100 == 0: #every 100 pics
             print("{} of {} pictures remaining".format((num_pictures-i),original_pics))
             GPIO.output(BEEP,GPIO.HIGH)
-            time.sleep(0.3)
+            time.sleep(0.2)
             GPIO.output(BEEP,GPIO.LOW)
 
         folder = save_location + "/Z" + str(ZCoord[i]).zfill(4) + "R" + str(RCoord[i]).zfill(3) #will make new folder on each change in Z or R
@@ -532,7 +572,7 @@ def GridScan(ScanLocations,conditions='default'):
         time.sleep(0.2)
         GPIO.output(BEEP,GPIO.LOW)
 
-    a = input('press any key to exit')
+    b = input('press enter to exit')
 def XRepeatTest(num_trials=100):
 
     HomeX()
@@ -634,7 +674,7 @@ def MoveX(direction,numsteps,delay):
     XPosition.configure(text="X: "+str(GlobalX) + "/" + str(XMax)) #updates the global position on the screen. Not a good way to do it!
 
 
-def XGoTo(XDest, XMin=0):
+def XGoTo(XDest,SPEED='auto',XMin=0):
     """checks the place is valid and then calls MoveX appropriately.
     Should be upgradable to have boundaries, aka min and max."""
     global GlobalX
@@ -645,10 +685,12 @@ def XGoTo(XDest, XMin=0):
 
     if XDest <= XMax and XDest >= XMin:
         distance = XDest - GlobalX
+        if SPEED == 'auto':
+            SPEED = CalculateSpeed(abs(distance)) 
         if distance > 0: #forward
-            MoveX(XFORWARD,distance,FASTER)
+            MoveX(XFORWARD,distance,SPEED)
         else:
-            MoveX(XBACKWARD,abs(distance),FASTER)
+            MoveX(XBACKWARD,abs(distance),SPEED)
     else:
         print ('Destination out of range')
 
@@ -679,7 +721,7 @@ def MoveY(direction,numsteps,delay):
         GlobalY -= numsteps
     YPosition.configure(text="Y: "+str(GlobalY) + "/" +str(YMax))
 
-def YGoTo(YDest, YMin=0):
+def YGoTo(YDest, SPEED='auto',YMin=0):
     """checks the place is valid and then calls MoveY appropriately.
     Should be upgradable to have boundaries, aka min and max."""
     global GlobalY
@@ -689,10 +731,12 @@ def YGoTo(YDest, YMin=0):
 
     if YDest <= YMax and YDest >= YMin:
         distance = YDest - GlobalY
+        if SPEED == 'auto':
+            SPEED = CalculateSpeed(abs(distance)) 
         if distance > 0: #forward
-            MoveY(YFORWARD,distance,FASTER)
+            MoveY(YFORWARD,distance,SPEED)
         else:
-            MoveY(YBACKWARD,abs(distance),FASTER)
+            MoveY(YBACKWARD,abs(distance),SPEED)
     else:
         print ('Destination out of range')
 
@@ -732,6 +776,7 @@ def RGoTo(RDest, RMin=0):
 
     if RDest <= RMax and RDest >= RMin:
         distance = RDest - GlobalR
+        
         if distance > 0: #forward
             MoveR(RFORWARD,distance,FAST)
         else:
@@ -800,7 +845,7 @@ def MoveZ(direction,numsteps,delay):
         GlobalZ -= numsteps
     ZPosition.configure(text="Z: "+str(GlobalZ) + "/" + str(ZMax))
 
-def ZGoTo(ZDest, ZMin=0):
+def ZGoTo(ZDest,SPEED='auto', ZMin=0):
     """checks the place is valid and then calls MoveZ appropriately.
     """
 
@@ -810,11 +855,13 @@ def ZGoTo(ZDest, ZMin=0):
         return ('integers only dingus') #this is not good practice right
 
     if ZDest <= ZMax and ZDest >= ZMin:
-        numsteps = ZDest - GlobalZ
-        if numsteps > 0: #forward
-            MoveZ(ZFORWARD,numsteps,FASTERER)
+        distance = ZDest - GlobalZ
+        if SPEED == 'auto':
+            SPEED = CalculateSpeed(abs(distance)) 
+        if distance > 0: #forward
+            MoveZ(ZFORWARD,distance,SPEED)
         else:
-            MoveZ(ZBACKWARD,abs(numsteps),FASTERER)
+            MoveZ(ZBACKWARD,abs(distance),SPEED)
     else:
         print ('Destination out of range')
 
@@ -856,7 +903,7 @@ def HomeX():
                     return (i) #break away essentially
                 MoveX(0,1,SLOW)
             #do stepping protocol (second in case button already pressed)
-        MoveX(0,1,FAST)#dir dis delay
+        MoveX(0,1,FASTERER)#dir dis delay
 
 def HomeY():
     global GlobalY
@@ -878,7 +925,7 @@ def HomeY():
                     return (i) #break away essentially
                 MoveY(YBACKWARD,1,SLOW)
             #do stepping protocol (second in case button already pressed)
-        MoveY(YBACKWARD,1,FAST)#dir dis delay
+        MoveY(YBACKWARD,1,FASTERER)#dir dis delay
 
 def HomeZ():
     global GlobalZ
@@ -1106,7 +1153,7 @@ try:
     time.sleep(0.1)
     GPIO.output(BEEP,GPIO.LOW)
 
-    LaserTest = DefineScan(1100,1300,600,800,0,0,0,0,20,20) #placed in a random location so it will get lost
+    #LaserTest = DefineScan(1100,1300,600,800,0,0,0,0,20,20) #placed in a random location so it will get lost
 
 
     scan_file = open('/home/pi/Desktop/ladybug/scandata.pkl', 'rb')
