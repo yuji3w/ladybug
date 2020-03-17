@@ -53,6 +53,8 @@ FactorsOf160 = [1,2,4,5,8,10,16,20,32,40,80,160] #for drop down menu of rotation
 
 #PDIn = 7 #photodiode input pin
 
+#for basic scope and finder plate locations of level screws at all the way magnification
+LevelCheckLocations = {'X':(3540,6100,1300),'Y':(130,6300,6300),'Z':(27975,27975,27975)}
 
 YDIR = 26 #SAMPLE #change back to 26
 XDIR = 18 #CAMERA
@@ -237,25 +239,29 @@ def TakeSelfie():
 def CalculateOverlap(XSteps,YSteps,PixelsPerStep=1,XWidth=640,YHeight=480):
     #basic function gives percent overlap based on x/y pixels per step (same value if straight scope)
     #generally wasteful to exceed 50 percent overlap
-    
-    #3750 =~ 4000 steps away from object (19 =~20mm) 1 to 1 pixels per step with dinolite basic 
-    #500 steps or 2.5ish mm is 1.5 pixels/step
-    
-    #250 steps away (2nd zoom mode only) is 7.5 pixels/step 
-    
+
+    #3750 =~ 4000 steps away from object (19 =~20mm) 1 to 1 pixels per step with dinolite basic
+    #with A4517MZT edge plus about 2 pixels per step (same field of view displacement?) AKA same scan displacements we're used to
+
+    #500 steps or 2.5ish mm is 1.5 pixels/step (320X 240Y for 25 percent overlap)
+
+    #250 steps away (2nd zoom mode only) is 7.5 pixels/step
+
+    #generic cam high res (to get dat working distance) 11 pixels per step
+
     XOverlap = ((XWidth-XSteps*PixelsPerStep)/XWidth)*100 #in percent
     YOverlap = ((YHeight-YSteps*PixelsPerStep)/YHeight)*100
-    
+
     print ("X overlap is {}%, Y Overlap is {} if {} Pixels Per Step displacement".format(XOverlap,YOverlap,PixelsPerStep))
-    
+
     return (XOverlap,YOverlap,PixelsPerStep)
 
 def CalculateSpeed(distance):
     #Just returns my terribly named speeds by distance traveled
     #mostly in order to reduce vibrations for short distances
-    
+
     if distance >= 1000:
-        SPEED = FASTERER    
+        SPEED = FASTERER
     elif 500 <= distance < 1000:
         SPEED = FASTER
     elif 150 <= distance < 500:
@@ -264,10 +270,10 @@ def CalculateSpeed(distance):
         SPEED = SLOW
     else:
         SPEED = SLOWER
-        
+
     return (SPEED)
-    
-    
+
+
 def DefineScan(XMin, XMax, YMin, YMax, ZMin, ZMax, RMin, RMax, XSteps=100, YSteps=100, ZSteps=1, RSteps=1):
     """core from stack exchange. https://stackoverflow.com/questions/20872912/raster-scan-pattern-python
     modified october 11 2018 to include Z and R, meaning R is now set in absolute positions
@@ -336,13 +342,13 @@ def DefineScan(XMin, XMax, YMin, YMax, ZMin, ZMax, RMin, RMax, XSteps=100, YStep
             NewNewRScan.append(rgrid[i])
 
     ScanLocations = {'X':NewNewXScan,'Y':NewNewYScan,'Z':NewNewZScan,'R':NewNewRScan}
-    
-    
+
+
     CalculateOverlap(XSteps,YSteps,PixelsPerStep=1)
-    
+
     print("{} images".format(len(NewNewXScan)))
-    
-    
+
+
     return(ScanLocations)
 
 def LaserScan(ScanLocations, Adjust_Z=True, Sample_Number = 5, Z_Tolerance=20):
@@ -428,8 +434,9 @@ def GridScan(ScanLocations,conditions='default'):
     if conditions == 'default':
         save_location = filedialog.askdirectory()
         filetype = ".jpg"
-        resolution = "640x480" #fswebcam adjusts to be higher at least with alternate microscope I have
-        timeallowed = 5 #number of seconds you have to save the scan.
+        #resolution = "640x480" #fswebcam adjusts to be higher at least with alternate microscope I have
+        resolution = "1280x960"
+        timeallowed = 10 #number of seconds you have to save the scan.
         num_failures = 0
         original_pics = len(XCoord)
         original_time = start_time
@@ -686,7 +693,7 @@ def XGoTo(XDest,SPEED='auto',XMin=0):
     if XDest <= XMax and XDest >= XMin:
         distance = XDest - GlobalX
         if SPEED == 'auto':
-            SPEED = CalculateSpeed(abs(distance)) 
+            SPEED = CalculateSpeed(abs(distance))
         if distance > 0: #forward
             MoveX(XFORWARD,distance,SPEED)
         else:
@@ -732,7 +739,7 @@ def YGoTo(YDest, SPEED='auto',YMin=0):
     if YDest <= YMax and YDest >= YMin:
         distance = YDest - GlobalY
         if SPEED == 'auto':
-            SPEED = CalculateSpeed(abs(distance)) 
+            SPEED = CalculateSpeed(abs(distance))
         if distance > 0: #forward
             MoveY(YFORWARD,distance,SPEED)
         else:
@@ -776,7 +783,7 @@ def RGoTo(RDest, RMin=0):
 
     if RDest <= RMax and RDest >= RMin:
         distance = RDest - GlobalR
-        
+
         if distance > 0: #forward
             MoveR(RFORWARD,distance,FAST)
         else:
@@ -857,7 +864,7 @@ def ZGoTo(ZDest,SPEED='auto', ZMin=0):
     if ZDest <= ZMax and ZDest >= ZMin:
         distance = ZDest - GlobalZ
         if SPEED == 'auto':
-            SPEED = CalculateSpeed(abs(distance)) 
+            SPEED = CalculateSpeed(abs(distance))
         if distance > 0: #forward
             MoveZ(ZFORWARD,distance,SPEED)
         else:
