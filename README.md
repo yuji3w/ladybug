@@ -1,4 +1,7 @@
 # ladybug
+http://www.TwoBlueTech.com
+
+https://www.instructables.com/id/LadyBug-a-Motorized-Microscope-and-3D-Scanner-for-/
 
 https://imgur.com/user/waynewaynehello
 

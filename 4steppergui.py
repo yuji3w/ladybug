@@ -1,96 +1,112 @@
 #!/usr/bin/env python3
 
-from numpy import *
-import random
+from numpy import * #for generating scan parameters
+import random #for repeatability tests
 import time
 import math
 import os
-import tkinter as tk
+import tkinter as tk #contains GUI, can be removed if converted to headless
 from tkinter import font
 from tkinter import filedialog
 import RPi.GPIO as GPIO
 import subprocess #For taking a picture with fswebcam
 import sys
 import select #for timeouts and buzzing when usb gets disconnect
-import pickle
+import pickle #for saving scan data and resuming
 
-GPIO.setmode(GPIO.BOARD)
+GPIO.setmode(GPIO.BOARD) #IMPORTANT! Physical pin layout
 
-GlobalX = 0 #X distance from home in steps
-GlobalY = 0
-GlobalZ = 0
-GlobalR = 0 #keep same naming scheme, but R = rotation
-#Note that upon resuming a scan we have to reset this to R we left off
+     #Distances from home position in steps for each motor. 
+#Starts at "0" so if you don't have any switches just move them there before running the program. 
 
-#These are set by the GUI and passed off to scan configuration
+GlobalX = 0 #"Top" motor
+GlobalY = 0 #"Bottom" motor
+GlobalZ = 0 #up and down
+GlobalR = 0 #Rotation. 
+
+#These are scan parameters intended to be set by the GUI and can otherwise be ignored
+
 XScanMin = 0
 XScanMax = 0
 YScanMin = 0
 YScanMax = 0
-ZScanMin = 0
+ZScanMin = 0                                                                                                                                                                                                                                                                                                                                    
 ZScanMax = 0
-XScanStep = 100 #A good default
-YScanStep = 100
-ZScanStep = 500 
-RScanNumber = 1
+RScanMin = 0
+RScanMax = 160 #This is a temporary stopgap from changing how scanning works.
+XScanStep = 150 #amount of motion (in steps) in each dimension in the scan 
+YScanStep = 150 #reasonable default for field of view. Can scretch to 150 for faster scans.
+ZScanStep = 1 #a good default is 500, but this makes it easier to run simple scans with the GUI 
+RScanNumber = 1 #number of rotations per scan, 1 = no rotation. Naming scheme holdoff, will be fixed later
 
-FactorsOf160 = [1,2,4,5,8,10,16,20,32,40,80,160] #for drop down menu of rotations of R
-defaultscan = [0,400,0,400,0,0,0,0,100,100,1,1] #for debugging to generate from define scan
+FactorsOf160 = [1,2,4,5,8,10,16,20,32,40,80,160] #for drop down menu of rotations of R since 20 step motor with 8th micro
+ 
+#begin defining pins for input and output (GPIO.BOARD). These can be changed to fit your setup.
 
-YDIR = 26 #SAMPLE
-XDIR = 18 #CAMERA
-ZDIR = 40
-RDIR = 19 #for clock and counterclock
+YDIR = 26 #Sample AKA bottom direction pin
+XDIR = 18 #Camera AKA top
+ZDIR = 40 
+RDIR = 21 
 
-YSTEP = 24 #stepping pin 
+YSTEP = 24 #Stepping pins
 XSTEP = 16
 ZSTEP = 38
-RSTEP = 23
+RSTEP = 19
 
-BEEP = 33 #GPIO pin to beep for pleasing yujie
+BEEP = 35 #GPIO pin to beep for indications (thanks Yujie). Can also put an LED here or something else
 
-XMax = 1800 #max range. Affected by choice of sled
-YMax = 1800
+XLimit = 11 #Mechanical limitswitch pin input
+YLimit = 13
+ZLimit = 15 #Optical switch pin input!
+
+
+XMax = 1800 #max range in 8th microsteps. Affected by choice of carriage
+YMax = 2000
+ZMax = 3000
 StepsPerRotation = 160 #for 8th microstepping on the R axis we have
 
-XLimit = 5 #limit switch pin input
-YLimit = 13
-ZLimit = 15 #optical switch. Goes low but there is a transition over a few microsteps
-
-XFORWARD = 1 #Arbitrary  
+XFORWARD = 1 #Forward means away from home position
 XBACKWARD = 0   
 
-YFORWARD = 0 #this is bad coding
-YBACKWARD = 1
+YFORWARD = 1 
+YBACKWARD = 0
 
-ZFORWARD = 0
-ZBACKWARD = 1
+ZFORWARD = 1
+ZBACKWARD = 0
 
-RFORWARD = 1 #To keep naming scchhhomeme. But we'll consider forward as clockwise if referenced
+RFORWARD = 1 #Consider forward as clockwise if looking at your sample if referenced
 RBACKWARD = 0
+
+#preset speeds, defined as delay between steps in s.
 
 FASTERER = 0.0003
 FASTER = 0.0006
-FAST = 0.002 #delay between steps in s,
+FAST = 0.002 
 SLOW = 0.007
 SLOWER = 0.03
+SLOWERER = 0.06
+
+#Begin GPIO output setup
 
 GPIO.setup(BEEP, GPIO.OUT)
-
 GPIO.setup(XDIR, GPIO.OUT)
 GPIO.setup(YDIR, GPIO.OUT)
 GPIO.setup(ZDIR, GPIO.OUT)
 GPIO.setup(RDIR, GPIO.OUT)
-
 GPIO.setup(XSTEP, GPIO.OUT)
 GPIO.setup(YSTEP, GPIO.OUT)
 GPIO.setup(ZSTEP, GPIO.OUT)
 GPIO.setup(RSTEP, GPIO.OUT)
 
-GPIO.setup(YLimit, GPIO.IN, pull_up_down=GPIO.PUD_UP) #sense pin for Y home switch
-GPIO.setup(XLimit, GPIO.IN, pull_up_down=GPIO.PUD_UP) #sense pin for X home switch
-GPIO.setup(ZLimit, GPIO.IN) #no pull up. Direct sense
+#GPIO input setup for limit switches
+GPIO.setup(YLimit, GPIO.IN, pull_up_down=GPIO.PUD_UP) 
+GPIO.setup(XLimit, GPIO.IN, pull_up_down=GPIO.PUD_UP) 
+GPIO.setup(ZLimit, GPIO.IN, pull_up_down=GPIO.PUD_UP) #no pull up! Direct sense with optical switch.
 
+
+#Start Tkinter GUI window. More Tkinter way below. 
+#May fork to a headless version of this with all Tkinter stuff removed,
+#Since I think it adds a lot of bloat and not too much benefit.
 
 win = tk.Tk()
 myFont = tk.font.Font(family='Helvetica', size=12, weight='bold')
@@ -98,22 +114,330 @@ myBigFont = tk.font.Font(family='Helvetica', size=20,weight='bold')
 font.families()
 
 
-def restart():
+#Begin defining scanner guts
+
+def beep(duration = 0.2, repeat = 1):
+    
+    for i in range (repeat):
+        GPIO.output(BEEP,GPIO.HIGH)
+        time.sleep(duration/2)
+        GPIO.output(BEEP,GPIO.LOW)
+        time.sleep(duration/2)
+
+def ExampleScan():
+    #rotation acting strange!
+    ScanCoord = DefineScan(800,1000,1000,1200)
+    GridScan(ScanCoord)
+
+def DemoMove(speed=1,delay = 1):
+    #moves motors in a sequence for demo purposes
+    #speed is multiplier, delay in seconds between routines
+    for i in range(700):
+        MoveX(XFORWARD,2,FASTERER/speed)
+        MoveY(YFORWARD,2,FASTERER/speed)
+        MoveZ(ZFORWARD,4,FASTERER/speed)
+        if i%5 == 0:
+            
+            MoveR(RFORWARD,2,FASTERER/speed)
+
+    time.sleep(delay/2)
+    
+    for i in range(700):
+        MoveX(XBACKWARD,2,FASTERER/speed)
+        MoveY(YBACKWARD,2,FASTERER/speed)
+        MoveZ(ZBACKWARD,4,FASTERER/speed)
+        if i%5 == 0:
+            
+            MoveR(RBACKWARD,2,FASTERER/speed)
+            
+    time.sleep(delay)
+    
+    MoveX(XFORWARD,1500,FASTERER/speed)
+    time.sleep(0.1)
+    MoveX(XBACKWARD, 1500, FASTERER/speed)
+    time.sleep(0.1)
+    MoveX(XFORWARD,800,FASTERER/speed)
+    
+    time.sleep(delay/2)
+    
+    MoveY(YFORWARD, 1500, FASTERER/speed)
+    time.sleep(0.1)
+    MoveY(YBACKWARD, 1500, FASTERER/speed)
+    time.sleep(0.1)
+    MoveY(YFORWARD, 1400, FASTERER/speed)
+    
+    for i in range(2):
+        MoveZ(ZFORWARD, 2800, FASTERER/2/speed)
+        MoveZ(ZBACKWARD, 2800, FASTERER/2/speed)
+        
+    MoveZ(ZFORWARD, 2800, FASTER/speed)
+    MoveZ(ZBACKWARD, 2800, FASTER/speed)
+    
+    for i in range(1):
+        MoveR(RFORWARD, 320, FAST/speed)
+        time.sleep(delay/2)
+        MoveR(RBACKWARD, 320, FAST/speed)
+    time.sleep(delay/2)    
+    MoveR(RFORWARD, 800, FAST/speed)
+    
+    time.sleep(delay)
+    HomeX()
+    HomeY()
+    beep(0.25,2)
+    
+def restart(): #restart whole pi
     command = "/usr/bin/sudo /sbin/shutdown -r now"
     process = subprocess.Popen(command.split(), stdout=subprocess.PIPE)
     output = process.communicate()[0]
     print(output)
 
+def MoveX(direction,numsteps,delay):
+    '''parent function for moving x. Just sets direction pin,
+    then flips step pin high and low with delay  '''
+    
+    GPIO.output(XDIR, direction)
+        
+    for i in range(numsteps):
+            
+            GPIO.output(XSTEP, GPIO.HIGH)
+            time.sleep(delay)
+            GPIO.output(XSTEP, GPIO.LOW)
+    
+    global GlobalX
+    
+    if direction == XFORWARD:
+        GlobalX += numsteps
+    else:
+        GlobalX -= numsteps
+    
+    XPosition.configure(text="X: "+str(GlobalX) + "/" + str(XMax)) 
+    #updates the global position on the screen. Get rid of this if headless!
+    
+def XGoTo(XDest, XMin=0):
+    """checks if the place is valid and then calls MoveX appropriately.
+    Should stop you from going across boundaries."""
+  
+    global GlobalX
+    global XMax
+    
+    if not isinstance(XDest,int):
+        return ('Please input an integer for X destination') #why you so stupid, stupid
+        
+    if XDest <= XMax and XDest >= XMin:
+        distance = XDest - GlobalX
+        if distance > 0: #forward
+            MoveX(XFORWARD,distance,FASTER)
+        else:
+            MoveX(XBACKWARD,abs(distance),FASTER) 
+    else:
+        print ('Destination out of range')
+      
+      
+def MoveY(direction,numsteps,delay):
+    '''parent function for Y. '''
+    
+    GPIO.output(YDIR, direction)    
+        
+    for i in range(numsteps):
+            
+        GPIO.output(YSTEP, GPIO.HIGH)
+        time.sleep(delay)
+        GPIO.output(YSTEP, GPIO.LOW)        
+    
+    global GlobalY
+    
+    if direction == YFORWARD:  
+        GlobalY += numsteps
+    else:
+        GlobalY -= numsteps
+    YPosition.configure(text="Y: "+str(GlobalY) + "/" +str(YMax)) #REMOVE IF CONVERTING TO HEADLESS WITHOUT GUI
+    
+def YGoTo(YDest, YMin=0):
+    """checks the place is valid and then calls MoveY appropriately."""
+  
+    global GlobalY
+    global YMax
+    if not isinstance(YDest,int):
+        return ('Please input an integer for Y destination')
+        
+    if YDest <= YMax and YDest >= YMin:
+        distance = YDest - GlobalY
+        if distance > 0: #forward
+            MoveY(YFORWARD,distance,FASTER)
+        else:
+            MoveY(YBACKWARD,abs(distance),FASTER) 
+    else:
+        print ('Destination out of range')
 
-def DefineScan(XMin, XMax, YMin, YMax, ZMin, ZMax, RMin, RMax, XSteps=100, YSteps=100, ZSteps=1, RSteps=1):
-    """core from stack exchange. https://stackoverflow.com/questions/20872912/raster-scan-pattern-python
-    modified october 11 2018 to include Z and R, meaning R is now set in absolute positions
-    Important: Because its not inclusive in max, it will break if for instance you say rmin = 0 rmax = 0, so we add 1 to all maximums
-    so if you dont want to go more than one Z or R, set for instance Zmin=Zmax and ZSteps = 1.
+def MoveZ(direction,numsteps,delay):
+    '''parent function for Z. This version has no sleep pin enable/disable:
+    Be careful to use a low voltage and amount of current! Otherwise small motors like this will get hot!'''
     
-    returns a list of four lists which each contain the absolute positions at every point in a scan for x,y,z,r"""
+    GPIO.output(ZDIR, direction)
+    global GlobalZ
+         
+    for i in range(numsteps):
+            
+        GPIO.output(ZSTEP, GPIO.HIGH)
+        time.sleep(delay)    
+        GPIO.output(ZSTEP, GPIO.LOW)        
+        
     
-    XMax = XMax+1
+    if direction == ZFORWARD: 
+        GlobalZ += numsteps
+    else:
+        GlobalZ -= numsteps
+    ZPosition.configure(text="Z: "+str(GlobalZ) + "/" + str(ZMax))
+
+def ZGoTo(ZDest, ZMin=0):
+    """checks the place is valid and then calls MoveZ appropriately.
+    At the home position there happens to be just about 2000 steps
+    forward and 1000 steps back --- for 1 micron per step."""
+    
+    global GlobalZ
+    global ZMax
+    
+    if not isinstance(ZDest,int):
+        return ('Please input an integer for Z destination')
+        
+    if ZDest <= ZMax and ZDest >= ZMin:
+        numsteps = ZDest - GlobalZ
+        if numsteps > 0: #forward
+            MoveZ(ZFORWARD,numsteps,FASTERER)
+        else:
+            MoveZ(ZBACKWARD,abs(numsteps),FASTERER) 
+    else:
+        print ('Destination out of range')
+
+def MoveR(direction,numsteps,delay):
+
+    GPIO.output(RDIR, direction)
+    global GlobalR
+    
+    for i in range(numsteps):
+        GPIO.output(RSTEP, GPIO.HIGH)
+        time.sleep(delay)
+        GPIO.output(RSTEP,GPIO.LOW)
+    
+    '''Count information like the others could be inserted here. 
+    But we don't really have a way to define our "zero", except for wherever it is when we start the scan,
+    which is problematic because what if we restart with our R in a different place? 
+    If there are undiscovered problems, I think they would revolved around this area. FYI. '''
+
+def RGoTo(RDest, RMin=0):
+    """checks that it's within the proper range and calls MoveR. Note that I just added this because I noticed it was missing. 
+    Not sure where it went or if I never made it for some reason, but then how was everything working...?"""
+  
+    global GlobalR
+    global StepsPerRotation
+    
+    if not isinstance(RDest,int):
+        return ('Please input an integer for R destination')
+        
+    if RDest <= StepsPerRotation and RDest >= RMin:
+        distance = RDest - GlobalR
+        if distance > 0: #forward
+            MoveR(RFORWARD,distance,FAST)
+        else:
+            MoveR(RBACKWARD,abs(distance),FAST) 
+    else:
+        print ('I understand the desire to watch the motor spin around a lot... but between {} and {} please'.format(RMin,StepsPerRotation))
+              
+def CheckPress(PIN):
+    '''checks whether specified GPIO pin has been pressed, since home procedures have to call multiple times'''
+    input_state = GPIO.input(PIN)
+    if input_state == False: #button press
+            time.sleep(0.05) #debounce
+            input_state = GPIO.input(PIN)
+            if input_state == False: #still!
+                return True #yep, button press
+            
+def HomeX():
+    global GlobalX
+    for i in range(XMax + 200): #some number that's noticably larger than the range, but also will eventually stop in case something goes wrong 
+    
+    #check if button is pressed
+        
+        
+        if CheckPress(XLimit): #button pressed once. need to move forward and back again to ensure correct start position
+            MoveX(XFORWARD,300,SLOW) #move forward
+            for j in range(350): #move back and check again
+                if CheckPress(XLimit): #again
+                    
+                
+                    print('Button has been pressed after {} steps!'.format(i))
+                    print('was already homed check: took {} out of 300 steps on the second bounce'.format(j))
+                    GlobalX = 0
+                    XPosition.configure(text="X: " +str(GlobalX) + "/" + str(XMax))
+                    return (i) #break away essentially
+                MoveX(XBACKWARD,1,SLOW)
+            #do stepping protocol (placed second in case button already pressed)
+        MoveX(XBACKWARD,1,FASTER)#dir dis delay
+
+def HomeY():
+    global GlobalY
+    for i in range(YMax + 200): #some number that's noticably larger than the range, but also will eventually stop in case something goes wrong 
+    
+    #check if button is pressed
+        
+        
+        if CheckPress(YLimit): #button pressed once. need to move forward and back again to ensure correct start position
+            MoveY(YFORWARD,300,SLOW) #move forward
+            for j in range(350): #move back and check again
+                if CheckPress(YLimit): #again
+                    
+                
+                    print('Button has been pressed after {} steps!'.format(i))
+                    print('was already homed check: took {} out of 300 steps on the second bounce'.format(j))
+                    GlobalY = 0
+                    YPosition.configure(text="Y: "+str(GlobalY) + "/" + str(YMax))
+                    return (i) #break away essentially
+                MoveY(YBACKWARD,1,SLOW)
+            #do stepping protocol (placed second in case button already pressed)
+        MoveY(YBACKWARD,1,FASTER)#dir dis delay
+
+def HomeZ():
+    
+    '''This is a bit different than X and Y, because the optical switch is tripped about a thousand steps up from the true bottom!
+ It's more hardcoded with actual numbers. 
+ This whole procedure should be replaced with a substituted-in copy of HomeY or X if using a regular physical switch.'''
+
+    global GlobalZ
+    
+    for i in range(ZMax + 500): 
+    
+    #check if button is pressed
+        
+    
+        if CheckPress(ZLimit): #button pressed once. need to move forward and back again to ensure correct start position
+            MoveZ(ZFORWARD,1200,FAST) #move forward -- at least 1k b/c neg range
+            for j in range(1400): #move back and check again
+                if CheckPress(ZLimit): #again
+                    
+                    MoveZ(ZBACKWARD, 1000, FAST) #START AT MINIMUM RANGE for easier calculating
+
+                    print('Optical switch has been tripped after {} steps!'.format(i))
+                    print('was already homed check: took {} out of 1200 steps on the second bounce'.format(j))
+                    
+                    
+                    GlobalZ = 0
+                    ZPosition.configure(text="Z: "+str(GlobalZ) + "/" + str(ZMax))
+                    return (i) #break away essentially
+                MoveZ(ZBACKWARD,1,FAST)
+            #do stepping protocol (second in case button already pressed)
+        MoveZ(ZBACKWARD,1,FAST)#dir dis delay
+   
+def DefineScan(XMin, XMax, YMin, YMax, ZMin=0, ZMax=0, RMin=0, RMax=0, XSteps=100, YSteps=100, ZSteps=1, RSteps=1):
+    """
+    Used to generate a dictionary with four keys, each of which maps to a list containing
+    the absolute positions of X,Y,Z, and R, for every point of a scan.
+    So if you don't want to move Z and R, just for instance set Zmin=Zmax=0 and ZSteps = 1.
+ 
+    Core, of 2-axis control, from stack exchange. https://stackoverflow.com/questions/20872912/raster-scan-pattern-python
+    
+    """
+    
+    XMax = XMax+1 #its not inclusive in max and will break if min = max, so we add 1 to all maximums.
     YMax = YMax+1
     ZMax = ZMax+1
     RMax = RMax+1
@@ -137,10 +461,8 @@ def DefineScan(XMin, XMax, YMin, YMax, ZMin, ZMax, RMin, RMax, XSteps=100, YStep
     yscan = concatenate(yscan)
     
     """up until this, it works just fine for x/y. I am adding 
-    my own code to account for Z now. Not efficient if there are a LOT of Z changes (it does X/Y rastering and returns to initial position for each Z).
-    Otherwise it's ok.
-    Note this will return empty lists if zgrid is empty (minz=maxz)
-    
+    my own code to account for Z now. Not efficient if there are a LOT of Z changes 
+    (it does X/Y rastering and returns to initial position for each change in Z). Otherwise it's fine.    
     
     """
     
@@ -156,10 +478,8 @@ def DefineScan(XMin, XMax, YMin, YMax, ZMin, ZMax, RMin, RMax, XSteps=100, YStep
             NewYScan.append(yscan[j])
             NewZScan.append(zgrid[i]) #note i not j
         
-    #and for rotations. Same deal as with Z"
+    #Repeat for change in rotation
 
-    #this too will return empty lists of minr = maxr
-            
     NewNewXScan = [] #I seriously hope nobody ever reads these variable names
     NewNewYScan = []
     NewNewZScan = []
@@ -177,37 +497,34 @@ def DefineScan(XMin, XMax, YMin, YMax, ZMin, ZMax, RMin, RMax, XSteps=100, YStep
 
 
 def GridScan(ScanLocations,conditions='default'):
+    
+    """the main loop that carries out an actual scan. Accepts the dictionary output of DefineScan, and an optional dictionary of conditions,
+ which is necessary when performing a restart in the middle of the scan. """
      
-    XCoord = ScanLocations['X']
+    XCoord = ScanLocations['X'] #simple list of axis location at each point in scan
     YCoord = ScanLocations['Y']
     ZCoord = ScanLocations['Z']
     RCoord = ScanLocations['R']
     
     start_time = time.time()
-
-    """Note that we have already added 1 in the DefineScan to account for half intervals"""
     
-    
-    """conditions will contain save location, filetype, resolution. num_failures and others. First time running default
-    is passed which contains standard conditions, but you can always specify it if you want to."""
-    
-    if conditions == 'default':
-        save_location = filedialog.askdirectory()
-        filetype = ".png"
-        resolution = "640x480" #fswebcam adjusts to be higher at least with alternate microscope I have
-        timeallowed = 5 #number of seconds you have to save the scan.
-        num_failures = 0
-        original_pics = len(XCoord)
+    if conditions == 'default': #usually the case!
+        save_location = filedialog.askdirectory() #pop up screen asking where to save files like flash drive
+        filetype = ".jpg" #jpgs are honestly ok too and might make things easier/faster #NOTE CHANGED FROM PNG DEC 16 2019
+        resolution = "640x480" #for crappy microscope, not necessarily reliable, though
+        timeallowed = 30 #number of seconds you have to save the scan if the USB is failing before auto restart!
+        num_failures = 0 #times restarted so far
+        original_pics = len(XCoord) 
         original_time = start_time
         original_locations = ScanLocations
-        failed_pics=[]
-        failure_times=[]
+        failed_pics=[] #keeps track of which pic we were on when restart happens
+        failure_times=[] #keeps track of when failure happens
         
-    else:
+    else: #generally, inputted automatically after a restart
         save_location = conditions['save_location']
         filetype = conditions['filetype']
         resolution = conditions['resolution']
-        timeallowed=0 #after one restart we don't bother trying to save scan
+        timeallowed=0 #after one restart we don't bother trying to save scan.
         num_failures=conditions['num_failures']
         failed_pics=conditions['failed_pics']
         failure_times=conditions['failure_times']
@@ -215,69 +532,76 @@ def GridScan(ScanLocations,conditions='default'):
         original_time=conditions['original_time']
         original_locations=conditions['original_locations']
         
-    num_pictures = len(XCoord) #remaining, not originally
-    NumberOfRotations = len(set(RCoord))
+    num_pictures = len(XCoord) #remaining pics, not originally
+    NumberOfRotations = len(set(RCoord)) #1 means no rotation
     stepsPerRotation = ((max(RCoord)-min(RCoord))/len(set(RCoord)))
     
-    print("Stepping {} per image".format(str(StepsPerRotation))) #just for debugging
+    #print("Rotating {} per image".format(str(StepsPerRotation))) #for debugging
     print("has failed and restarted {} times so far".format(str(num_failures)))
-
+    
+    #Initialize locations
+    
+    XGoTo(int(XCoord[0]))
+    YGoTo(int(YCoord[0]))
+    ZGoTo(int(ZCoord[0]))
+    RGoTo(int(RCoord[0]))
+    
     
         
     for i in range(num_pictures):
         
-        if i % 100 == 0: #every 100 pics
+        #beep!
+        if i % 100 == 0: #Should be percentage of remaining but this is ok
             print("{} of {} pictures remaining".format((num_pictures-i),original_pics))
-            GPIO.output(BEEP,GPIO.HIGH)
-            time.sleep(0.1)
+            GPIO.output(BEEP,GPIO.HIGH) 
+            time.sleep(0.3) #can eliminate if you're pinching seconds
             GPIO.output(BEEP,GPIO.LOW)
-        
-        folder = save_location + "/Z" + str(ZCoord[i]).zfill(4) + "R" + str(RCoord[i]).zfill(3) #will make new folder on each change in Z or R
-        if not os.path.exists(folder): #should hopefully continue saving in the same folder after restart
+            
+        #make new folder every time you change Z and R:
+        folder = save_location + "/Z" + str(ZCoord[i]).zfill(4) + "R" + str(RCoord[i]).zfill(3) 
+        if not os.path.exists(folder):
             os.makedirs(folder)
                 
             
-        #go to locations
-                    
+        #go to locations                    
         XGoTo(int(XCoord[i]))
         YGoTo(int(YCoord[i]))
         ZGoTo(int(ZCoord[i]))
         RGoTo(int(RCoord[i]))
             
-        time.sleep(0.1) #vibration control.
-                
-            
+        time.sleep(0.2) #VIBRATION CONTROL! (increased from 0.1 to 0.2 for high res)
+               
             
             
         name = "X" + str(XCoord[i]).zfill(4) + "Y" + str(YCoord[i]).zfill(4) + "Z" + str(ZCoord[i]).zfill(4) + "R" + str(RCoord[i]).zfill(3) + "of" + str(NumberOfRotations).zfill(3) + filetype
-        print(name)
+
         """begin filesaving block"""
         
-        try:
-            for w in range(3): #Waiting for user input too hard --- this just prompts x times and checks if USB plugged in in between
+        try: #Largely, problems are due to USB disconnecting or just not being in.
+            for w in range(3): #try to take pic with fswebcam
                 
                 proc = subprocess.Popen(["fswebcam", "-r " + resolution, "--no-banner", folder + "/" + name, "-q"], stdout=subprocess.PIPE) #like check_call(infinite timeout)
                 output = proc.communicate(timeout=10)[0]
                 
-                if os.path.isfile(folder + "/" + name): #better than checking time elapsed...
-                    if w > 0: #USB was restarted
+                if os.path.isfile(folder + "/" + name): #check if file was created 
+                    if w > 0: #AKA, USB was broken but fixed in time
                         print ('Okay thanks bozo. Restarting with {}'.format(name))
                         
                     break #move on to next picture
                 
-                elif (w <= 1): #usb got unplugged effing #hell
+                elif (w <= 1): #usb got unplugged aaaaggghhhhh
                 
-                      
+                    #attempt to catch USB from https://stackoverflow.com/questions/1335507/keyboard-input-with-timeout-in-python  
                     print('HEY BOZO THE USB GOT UNPLUGGED UNPLUG IT AND PLUG IT BACK IN WITHIN {} SECONDS OR WE REBOOT'.format(timeallowed))
                     print('check if {} failed'.format(name))
                 
                     GPIO.output(BEEP,GPIO.HIGH) #beep and bibrate
                 
-                    time.sleep(timeallowed)
+                    time.sleep(timeallowed) #Sorry, it will beep the full time, even if you restart it immediately
                 
                     GPIO.output(BEEP,GPIO.LOW)
                 
-                else: #USB unpluged and it wasn't plugged in in time
+                else: #Begin saving current scan data for restart. This could be reworked for periodic backup
                     UpdatedX = XCoord[i:]
                     UpdatedY = YCoord[i:]
                     UpdatedZ = ZCoord[i:]
@@ -302,41 +626,51 @@ def GridScan(ScanLocations,conditions='default'):
                                   'failure_times':failure_times} #after restart because no gui timeout after 0 seconds
                         
                     scan_params = [UpdatedScanLocations,conditions]
+                    print(scan_params) #for debugging if sitting there
+                    time.sleep(2)
                     
-                    scan_file = open('/home/pi/Desktop/ladybug/scandata.pkl', 'wb') #hardcode scan location
+                    scan_file = open('/home/pi/Desktop/ladybug/scandata.pkl', 'wb') #SCAN DATA LOCATION HARDCODED ONTO DESKTOP
+                    #Sorry about this, but it's because the auto restart cron script needs to know where to look. 
                          
-                    pickle.dump(scan_params,scan_file) #working!
+                    pickle.dump(scan_params,scan_file)
                     scan_file.close()
                     
                     print('restarting sorryyyyyy')
                         
                     restart()
                         
-        except subprocess.TimeoutExpired: #does not catch USB UNPLUG. Catches if it takes too long because lag
+        except subprocess.TimeoutExpired: #does not catch USB UNPLUG. Catches if it takes too long because of lag. Rarely happens
     
             print ("{} failed :( ".format(name))
             proc.terminate() #corrective measure?
-            continue #move on
+            continue #move on. In true loop, it keeps trying the same picture since it shouldn't matter which one
 
             
-        
-    print ('scan completed successfully after {} seconds! {} images taken and {} restarts'.format(time.strftime("%H:%M:%S", time.gmtime(time.time() - original_time)), str(original_pics),str(num_failures)))
+            
+    print ('scan completed successfully after {} seconds! {} images taken and {} restarts'.format
+           (time.strftime("%H:%M:%S", time.gmtime(time.time() - original_time)), str(original_pics),str(num_failures)))
     try:
-        os.rename('/home/pi/Desktop/ladybug/scandata.pkl','/home/pi/Desktop/ladybug/scandataold.pkl') #quick fix to avoid infinite loop while still being able to analyze
-    except FileNotFoundError:
-        print('nooooooo failures! woo')
+        os.rename('/home/pi/Desktop/ladybug/scandata.pkl','/home/pi/Desktop/ladybug/scandataold.pkl') 
+      #if you don't rename this, it can form an infinite loop! Should rename to reflect scan data or something
+    except FileNotFoundError: #meaning it never restarted and created scandata file
+        pass
     
-    for i in range(5):
+    for i in range(5): #beep beep beep beep beep
         GPIO.output(BEEP,GPIO.HIGH)
         time.sleep(0.2)
         GPIO.output(BEEP,GPIO.LOW)
 
-    a = input('press any key to exit')
-def XRepeatTest(num_trials=100):
+    a = input('press any key to exit') #hang to await confirmation scan completed if run in autoclosing shell
+
+#end main scan procedure. 
     
+def XRepeatTest(num_trials=100):
+    """this will move a lot and then home, to check to make sure we're not skipping steps or something. 
+    You can probably ignore this. """
+  
     HomeX()
     HomeX() #twice just to make sure it's good
-    HomeX() #first couple homes are sometimes wonky. 
+    HomeX() #one more for good luck? 
     global XMax
     total_steps = 0
     ranlocold = 0 #location old
@@ -360,7 +694,8 @@ def XRepeatTest(num_trials=100):
 
 
 def YRepeatTest(num_trials=100): 
-    
+    #same as X, you can probably ignore this or even remove entirely
+  
     HomeY()
     HomeY() 
     HomeY() #The first couple of homes are sometimes wonky
@@ -386,8 +721,8 @@ def YRepeatTest(num_trials=100):
     return([total_steps,imperfection,ListOfLoc])    
 
 def MultiRepeatTest(num_repeats = 100):
-    """calls y and x repeat many times with random numbers so we can plot stuff"""
-    X_History = [] #populated with list of lists. Each list being 
+    """calls y and x repeat many many times with random numbers so we can plot stuff"""
+    X_History = [] #populated with list of lists. 
     Y_History = []
     for i in range(num_repeats): #total trials
         numpertrial = 100 #random.randrange(1,10) #number of runs per trial
@@ -412,43 +747,6 @@ def MultiRepeatTest(num_repeats = 100):
     return(X_History,Y_History)        
 
 
-def MoveX(direction,numsteps,delay):
-    '''parent function for x. '''
-    
-    GPIO.output(XDIR, direction)
-        
-    for i in range(numsteps):
-            
-            GPIO.output(XSTEP, GPIO.HIGH)
-            time.sleep(delay)
-            GPIO.output(XSTEP, GPIO.LOW)
-    
-    global GlobalX
-    
-    if direction == 1: #totally arbitrary.
-        GlobalX += numsteps
-    else:
-        GlobalX -= numsteps
-    
-    XPosition.configure(text="X: "+str(GlobalX) + "/" + str(XMax)) #updates the global position on the screen. Not a good way to do it!
-    
-def XGoTo(XDest, XMin=0):
-    """checks the place is valid and then calls MoveX appropriately.
-    Should be upgradable to have boundaries, aka min and max."""
-    global GlobalX
-    global XMax
-    
-    if not isinstance(XDest,int):
-        return ('integers only dingus') #this is not good practice right
-        
-    if XDest <= XMax and XDest >= XMin:
-        distance = XDest - GlobalX
-        if distance > 0: #forward
-            MoveX(XFORWARD,distance,FASTER)
-        else:
-            MoveX(XBACKWARD,abs(distance),FASTER) 
-    else:
-        print ('Destination out of range')
 
 def XGet(event):
     '''records enter press from text box (XEntry) and calls "go to specified location function'''
@@ -458,41 +756,6 @@ def XGet(event):
     except ValueError: #hey dumbo enter an integer
         print ("hey dumbo enter an integer")    
 
-def MoveY(direction,numsteps,delay):
-    '''parent function for Y. '''
-    
-    GPIO.output(YDIR, direction)    
-        
-    for i in range(numsteps):
-            
-        GPIO.output(YSTEP, GPIO.HIGH)
-        time.sleep(delay)
-        GPIO.output(YSTEP, GPIO.LOW)        
-    
-    global GlobalY
-    
-    if direction == 0: #totally arbitrary 
-        GlobalY += numsteps
-    else:
-        GlobalY -= numsteps
-    YPosition.configure(text="Y: "+str(GlobalY) + "/" +str(YMax))
-
-def YGoTo(YDest, YMin=0):
-    """checks the place is valid and then calls MoveY appropriately.
-    Should be upgradable to have boundaries, aka min and max."""
-    global GlobalY
-    global YMax
-    if not isinstance(YDest,int):
-        return ('integers only dingus') #this is not good practice right
-        
-    if YDest <= YMax and YDest >= YMin:
-        distance = YDest - GlobalY
-        if distance > 0: #forward
-            MoveY(YFORWARD,distance,FASTER)
-        else:
-            MoveY(YBACKWARD,abs(distance),FASTER) 
-    else:
-        print ('Destination out of range')
 
 def YGet(event):
     '''records enter press from text box (YEntry) and calls "go to specified location function'''
@@ -503,82 +766,6 @@ def YGet(event):
         print ("hey dumbo enter an integer")    
 
 
-def MoveR(direction,numsteps,delay):
-
-    GPIO.output(RDIR, direction)
-    
-    global GlobalR
-    if direction == 1: #totally arbitrary. We call this clockwise but it'll change if I switch the wires around
-        GlobalR += numsteps
-    else:
-        GlobalR -= numsteps
-    #RPosition.configure(text="R: "+str(GlobalR) + "/" +str(RMax))
-
-    for i in range(numsteps):
-        GPIO.output(RSTEP, GPIO.HIGH)
-        time.sleep(delay)
-        GPIO.output(RSTEP,GPIO.LOW)
-        
-def RGoTo(RDest):
-    """Calls MoveR appropriately. We are pretending we have a rotary encoder."""
-    global GlobalR
-    
-    
-    if not isinstance(RDest,int):
-        return ('integers only dingus') #this is not good practice right
-    
-    distance = RDest - GlobalR
-    if distance > 0: #forward
-        MoveR(RFORWARD,distance,SLOWER)
-    else:
-        MoveR(RBACKWARD,abs(distance),SLOWER) 
-    
-
-    #insert counting information here
-        
-
-
-def MoveZ(direction,numsteps,delay):
-    '''parent function for Z. This version has no sleep pin enable/disable:
-    USE ONLY WITH LOW VOLTAGE (Less than 5v, less than 150 ma, or whatever
-    doesn't cause the motor to overheat'''
-    
-    GPIO.output(ZDIR, direction)
-    global GlobalZ
-         
-    for i in range(numsteps):
-            
-        GPIO.output(ZSTEP, GPIO.HIGH)
-        time.sleep(delay)    
-        GPIO.output(ZSTEP, GPIO.LOW)        
-        
-    
-    if direction == ZFORWARD: #totally arbitrary 
-        GlobalZ += numsteps
-    else:
-        GlobalZ -= numsteps
-    ZPosition.configure(text="Z: "+str(GlobalZ) + "/3000")
-
-def ZGoTo(ZDest, ZMin=0, ZMax=3000):
-    """checks the place is valid and tchechen calls MoveZ appropriately.
-    At the home position there happens to be just about 2000 steps
-    forward and 1000 steps back --- for 1 micron per step.
-    
-    Reworked to start at 0 and end at 3000"""
-    
-    global GlobalZ
-    if not isinstance(ZDest,int):
-        return ('integers only dingus') #this is not good practice right
-        
-    if ZDest <= ZMax and ZDest >= ZMin:
-        numsteps = ZDest - GlobalZ
-        if numsteps > 0: #forward
-            MoveZ(ZFORWARD,numsteps,FASTERER)
-        else:
-            MoveZ(ZBACKWARD,abs(numsteps),FASTERER) 
-    else:
-        print ('Destination out of range')
-
 def ZGet(event):
     '''records enter press from text box (ZEntry) and calls "go to specified location function'''
     try:
@@ -588,90 +775,19 @@ def ZGet(event):
         print ("hey dumbo enter an integer")    
 
 
-def CheckPress(PIN):
-    '''checks whether specified GPIO pin has been pressed, since home procedures have to call multiple times'''
-    input_state = GPIO.input(PIN)
-    if input_state == False: #button press
-            time.sleep(0.05) #debounce
-            input_state = GPIO.input(PIN)
-            if input_state == False: #still!
-                return True #yep, button press
-            
-def HomeX():
-    global GlobalX
-    for i in range(2500): #some number that's noticably larger than the range, but also will eventually stop in case something goes wrong 
-    
-    #check if button is pressed
-        
-        
-        if CheckPress(XLimit): #button pressed once. need to move forward and back again to ensure correct start position
-            MoveX(1,300,0.01) #move forward
-            for j in range(400): #move back and check again
-                if CheckPress(XLimit): #again
-                    
-                
-                    print('Button has been pressed after {} steps!'.format(i))
-                    print('was already homed check: took {} out of 300 steps on the second bounce'.format(j))
-                    GlobalX = 0
-                    XPosition.configure(text="X: " +str(GlobalX) + "/" + str(XMax))
-                    return (i) #break away essentially
-                MoveX(0,1,SLOW)
-            #do stepping protocol (second in case button already pressed)
-        MoveX(0,1,FAST)#dir dis delay
-
-def HomeY():
-    global GlobalY
-    for i in range(2500): #some number that's noticably larger than the range, but also will eventually stop in case something goes wrong 
-    
-    #check if button is pressed
-        
-        
-        if CheckPress(YLimit): #button pressed once. need to move forward and back again to ensure correct start position
-            MoveY(YFORWARD,300,SLOW) #move forward
-            for j in range(400): #move back and check again
-                if CheckPress(YLimit): #again
-                    
-                
-                    print('Button has been pressed after {} steps!'.format(i))
-                    print('was already homed check: took {} out of 300 steps on the second bounce'.format(j))
-                    GlobalY = 0
-                    YPosition.configure(text="Y: "+str(GlobalY) + "/" + str(YMax))
-                    return (i) #break away essentially
-                MoveY(YBACKWARD,1,SLOW)
-            #do stepping protocol (second in case button already pressed)
-        MoveY(YBACKWARD,1,FAST)#dir dis delay
-
-def HomeZ():
-    global GlobalZ
-    
-    for i in range(2500): #some number that's noticably larger than the range, but also will eventually stop in case something goes wrong 
-    
-    #check if button is pressed
-        
-    
-        if CheckPress(ZLimit): #button pressed once. need to move forward and back again to ensure correct start position
-            MoveZ(ZFORWARD,1200,FAST) #move forward -- at least 1k b/c neg range
-            for j in range(1400): #move back and check again
-                if CheckPress(ZLimit): #again
-                    
-                    MoveZ(ZBACKWARD, 1000, FAST) #START AT MINIMUM RANGE for easier calculating
-
-                    print('Optical switch has been tripped after {} steps!'.format(i))
-                    print('was already homed check: took {} out of 1200 steps on the second bounce'.format(j))
-                    
-                    
-                    GlobalZ = 0
-                    ZPosition.configure(text="Z: "+str(GlobalZ) + "/3000")
-                    return (i) #break away essentially
-                MoveZ(ZBACKWARD,1,FAST)
-            #do stepping protocol (second in case button already pressed)
-        MoveZ(ZBACKWARD,1,FAST)#dir dis delay
 
 def GuiScan():
     
+  #that "SCAN!!!" button I never use
+    #Note, just noticed that this isn't compatible with the new absolute value convention (being able to do partial R rotations).
+    #Fix will be later; temporary is passing RMin = 0 RMax = StepsPerRotation.
+    #and Rsteps = StepsPerRotation/RScanNumber
+    RScanStep = 160/RScanNumber #Temporary conversion from number of times to move R, with amount of steps moved each time R is moved.
+    print(RScanStep)
     
-    
-    GridScan(XScanMin,XScanMax,YScanMin,YScanMax,ZScanMin,ZScanMax,XScanStep,YScanStep,ZScanStep,RScanNumber)
+    CallForGrid = DefineScan(XScanMin,XScanMax,YScanMin,YScanMax,ZScanMin,ZScanMax,RScanMin,StepsPerRotation,XScanStep,YScanStep,ZScanStep,RScanStep)
+                                        
+    GridScan(CallForGrid)
     
 
 def SetR():
@@ -722,7 +838,7 @@ def MoveZDownBig(): #dir dis delay
     print("Z moved down a lot!")
     
 def MoveZDownSmall():
-    MoveZ(ZBACKWARD,50,FAST)
+    MoveZ(ZBACKWARD,25,FAST)
     print("Z moved down a little!")
 
 def MoveZUpBig():
@@ -730,16 +846,16 @@ def MoveZUpBig():
     print("Z moved up a lot!")
     
 def MoveZUpSmall():
-    MoveZ(ZFORWARD,50,FAST)
+    MoveZ(ZFORWARD,25,FAST)
     print("Z moved up a little!")
 
 def MoveRCWSmall():
     #cw when staring down at spindle or object
-    MoveR(RFORWARD, 8, SLOWER)
+    MoveR(RFORWARD, 8, SLOW)
     print("You rotated something clockwise a bit!")
     
 def MoveRCCWSmall(): #counterclockwise
-    MoveR(RBACKWARD, 8, SLOWER)
+    MoveR(RBACKWARD, 8, SLOW)
     print("You rotated something counterclockwise a bit!")
     
 def exitProgram():
@@ -783,7 +899,7 @@ def SetZUpperBound():
 
 def SetZStep():
     global ZScanStep
-    ZScanStep = GlobalZ #Yes I know I should be shot but this makes it more minimal
+    ZScanStep = GlobalZ #Yes I know I should be shot but this makes it more minimal. If want 100 stepsize, go to location 100 and press the button!
     print("Step size for Z has been set to {}".format(ZScanStep))
 
 def SetXStep():
@@ -799,12 +915,12 @@ def SetYStep():
 #Begin disgusting block of instructions for keypress. Complicated by fact we want to be able to hold Down.
 #Modified from https://stackoverflow.com/questions/12994796/how-can-i-control-keyboard-repeat-delay-in-a-tkinter-root-window
 #main changes are not displaying the Label and also only enabling key control when checkbox is checked (allow_keypress)
+#works okay for hitton the key once but not so much for holding it down.  
 
 
 def LeftStep(*event): #X
     MoveYForwardSmall()
-    #pyrint('Left')
-
+    
     if LeftLabel._repeat_on:
         win.after(LeftLabel._repeat_freq, LeftStep)
 
@@ -857,7 +973,7 @@ def DownStop(*event):
         DownLabel._repeat_on = True
 
 def AStep(*event): #note actual lowercase. FOr clock and counterclockwise rotation
-    print('A')
+    MoveRCCWSmall()
 
     if ALabel._repeat_on:
         win.after(ALabel._repeat_freq, AStep)
@@ -870,7 +986,7 @@ def AStop(*event):
         ALabel._repeat_on = True
 
 def DStep(*event): #note actual lowercase. FOr clock and counterclockwise rotation
-    print('D')
+    MoveRCWSmall()
 
     if DLabel._repeat_on:
         win.after(DLabel._repeat_freq, DStep)
@@ -883,7 +999,7 @@ def DStop(*event):
         DLabel._repeat_on = True
 
 def WStep(*event): #note actual lowercase. For Z AXIS W and S
-    print('W')
+    MoveZUpSmall()
 
     if WLabel._repeat_on:
         win.after(WLabel._repeat_freq, WStep)
@@ -896,7 +1012,7 @@ def WStop(*event):
         WLabel._repeat_on = True
 
 def SStep(*event): #note actual lowercase. For Z AXIS S and S
-    print('S')
+    MoveZDownSmall()
 
     if SLabel._repeat_on:
         win.after(SLabel._repeat_freq, SStep)
@@ -970,7 +1086,7 @@ def allow_keypress():
         win.unbind('<KeyPress-s>', Sbound)
         win.unbind('<KeyRelease-s>', Sunbound)
 
-#BEGIN WHAT GOES ONSCREEN
+#BEGIN WHAT GOES ONSCREEN. Someone who knows Tkinter, please fix this. I've forgotten what everything does. 
 
 win.title("Raspberry Pi GUI")
 win.geometry('1400x880')
@@ -1041,7 +1157,6 @@ XPosition.pack(side = tk.LEFT)
 XEntry = tk.Entry(LeftFrame, width = 4)
 XEntry.bind('<Return>', XGet)
 XEntry.pack(side=tk.LEFT)
-
 
 XLeftBigButton = tk.Button(LeftFrame, text = "⟸", font = myFont, command = MoveXLeftBig, height = 1, width =2 )
 XLeftBigButton.pack(side = tk.LEFT)
@@ -1125,24 +1240,25 @@ DownLabel = tk.Label(win)
 DownLabel._repeat_freq = int(SLOW*1000*10)  
 DownLabel._repeat_on = True
 
-ALabel = tk.Label(win) #a nd d are rotation
-ALabel._repeat_freq = 10  
+ALabel = tk.Label(win) #a and d are rotation
+ALabel._repeat_freq = int(SLOW*1000*10)  
 ALabel._repeat_on = True
 
 DLabel = tk.Label(win)
-DLabel._repeat_freq = 10  
+DLabel._repeat_freq = int(SLOW*1000*10)  
 DLabel._repeat_on = True
 
 WLabel = tk.Label(win)
-WLabel._repeat_freq = 10  
+WLabel._repeat_freq = int(SLOW*1000*10)  
 WLabel._repeat_on = True
 
 SLabel = tk.Label(win)
-SLabel._repeat_freq = 10  
+SLabel._repeat_freq = int(SLOW*1000*10)  
 SLabel._repeat_on = True
 
 
-"""begin resume scan if failed"""
+"""BEGIN MAIN LOOP, beginning with an attempt to resume scan if it detects that a previous one failed 
+(existence of scandata file)"""
 
 
 try:
@@ -1153,29 +1269,25 @@ try:
     GPIO.output(BEEP,GPIO.HIGH)
     time.sleep(0.1)
     GPIO.output(BEEP,GPIO.LOW)
-
+    
     
     scan_file = open('/home/pi/Desktop/ladybug/scandata.pkl', 'rb')
         
     scan_params = pickle.load(scan_file)
     scan_file.close()    
             
-    HomeX()
+    HomeX() 
     HomeY()
     HomeZ()
     
     locations = scan_params[0] #position data
     conditions = scan_params[1] #save location, filetype, resolution, timeout, numfailures
     
-    """because R has no endstop we have to set it to what it was in the scan"""
-    global GlobalR
-    GlobalR = conditions['R_Location']
-    
+    GlobalR = conditions['R_Location'] #I'm worried that pins would flip here during restart. Likely a source of error
+    #But becasue R has no endstop we have to set it to what it was in the scan
+
     GridScan(locations,conditions)
     
 except FileNotFoundError:
         
-    print('no saved scan file found. doing nothing')
-
-
-    
+    print('No interrupted scans found. Welcome to the scanner.')
