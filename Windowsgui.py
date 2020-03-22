@@ -14,6 +14,10 @@ import sys
 import select #for timeouts and buzzing when usb gets disconnect
 import pickle #for saving scan data and resuming
 import serial 
+import subprocess
+import cv2
+from PIL import Image, ImageTk
+
 
 #Distances from home position in steps for each motor.
 #Starts at "0" so if you don't have any switches just move them there before running the program.
@@ -22,13 +26,6 @@ GlobalX = 0 #left and right (on finder)
 GlobalY = 0 #towards and away from you (on finder)
 GlobalZ = 0
 GlobalR = 0 #keep same naming scheme, but R = rotation
-GlobalT = 0 #Tilt motor!
-
-TCenter = 3800 #X location directly above tilt axis. Determine experimentally
-YCenter = 3800 #Same for Y for convenience
-GlobalTOffset = 0-TCenter #updated with moving X for dynamic 5 axis adjustment
-
-#Note that resuming a scan is harder (no switches to reset) if using R and T.
 
 #These are scan parameters intended to be set by the GUI and can otherwise be ignored
 
@@ -43,54 +40,23 @@ YScanStep = 100
 ZScanStep = 500
 RScanNumber = 1 #needs consolidation with absolute value positioning system. kind of a mess
 
-FactorsOf160 = [1,2,4,5,8,10,16,20,32,40,80,160] #for drop down menu of rotations of R
 
+XMin = 0 #normally but theoretically could be altered by user
+YMin = 0 
+ZMin = 0 
+RMin = 0 
+XMax = 125 #tronxy 3d printer in mm
+YMax = 150
+ZMax = 120
+RMax = 33.33 #not great but mm per rotation
 
+BigXY = 5 #motion in mm for buttons, default, could be user reset
+LittleXY = 0.5
 
-#FOR FLASHFORGE FINDER WITH KES400A and original bed
+BigZ = 2
+LittleZ = 0.1 #maybe even too big but can be played with
 
-TRadius = 20 #default value, generally use calculated dynamically
-
-StepsPerRotation = 4096 #for 8th microstepping on the R axis we have (160 on original)
-StepsPerTilt = 1600 #full tilt revolution, probably use half this
-RadiansPerStep = (2*math.pi)/StepsPerTilt
-
-
-XMax = 9250 #max range. Affected by choice of sled
-YMax = 7200
-ZMax = 29000 #my goodness. Approximate, want to be conservative to not crush my voice coils. #29000 with no giant motor setup
-RMax = StepsPerRotation
-
-#steps per mm needed for calculations about correct for tilt
-
-XStepsPerMM = 47 #Measured using USB microscope close to 46.25 measured by hand
-ZStepsPerMM = 200
-
-
-
-XFORWARD = 1 #Arbitrary
-XBACKWARD = 0
-
-YFORWARD = 0 #this is bad coding
-YBACKWARD = 1
-
-ZFORWARD = 0
-ZBACKWARD = 1
-
-RFORWARD = 1 #To keep naming scchhhomeme. But we'll consider forward as clockwise if referenced
-RBACKWARD = 0
-
-TFORWARD = 1
-TBACKWARD = 0
-
- #made faster for finder
-FASTERER = 0.0002
-FASTER = 0.0004
-FAST = 0.001 #delay between steps in s,
-SLOW = 0.004
-SLOWER = 0.02
-
-
+timeout = 0.1 #default timeout for serial, important for GetPositions
 
 win = tk.Tk()
 myFont = tk.font.Font(family='Helvetica', size=12, weight='bold')
@@ -136,8 +102,57 @@ def SendGCode(GCode,machine='ladybug'):
     BytesGCode = GCode.encode('utf-8')
     machine.write(BytesGCode)
 
+def EngageSteppers():
+    SendGCode("M84 S3600") #tells it not to turn off motors for S seconds (default 60 grr)
+    SendGCode("M17") #engage steppers
 
-def RestartSerial(port=6, BAUD = 115200):
+def DisengageSteppers():
+    SendGCode("M18")
+
+def GetPositions(machine = 'ladybug'):
+    #returns dictionary X,Y,Z and maybe R of actual position at time of request
+    #known issues of    
+
+    sleeptime = 0.02
+    
+    if machine == 'ladybug': #fix so it doesn't fail at runtime. not proper 4sure
+        machine = LadyBug 
+        
+    previous_buffer = machine.read_all() #clear buffer essentially
+
+    SendGCode("M114") #report machine status
+    time.sleep(sleeptime)
+    for i in range (2): #communication back and forth not instant, i for failsafe
+        try:
+            dump = machine.read_until().decode('utf-8') #kept in bytes. read_all inconsistent
+        
+        except serial.SerialTimeoutException():
+        
+            print('timeout')
+            return False
+        
+        if 'Count' in dump: #precedes actual position data
+
+            remainder = dump[dump.find('Count'):] #has actual position
+            
+            Xraw = remainder[remainder.find('X:'):remainder.find('Y')]
+            Yraw = remainder[remainder.find('Y:'):remainder.find('Z')]
+            Zraw = remainder[remainder.find('Z:'):]
+
+            X = float(''.join([s for s in Xraw if (s.isdigit() or s == '.')]).strip())
+            Y = float(''.join([s for s in Yraw if (s.isdigit() or s == '.')]).strip())
+            Z = float(''.join([s for s in Zraw if (s.isdigit() or s == '.')]).strip())
+
+            #if ('.' not in X) or ('.' not in X) or ('.' not in X):
+                #readline sometimes inconsistent. Common denominatior
+            positions = {'X':X,'Y':Y,'Z':Z,'delay':i*sleeptime,'raw':dump,'prev':previous_buffer}
+            return positions
+        else:
+            time.sleep(sleeptime) #and loop back to try again
+    print('communication lag --- check USB cable or port if frequent')    
+    return(False)
+
+def RestartSerial(port=8, BAUD = 115200,timeout=timeout):
 
     if (not isinstance(port,int)) or (not isinstance(BAUD,int)):
          print ('please specify CNC port and BAUD rate (example: 6 , 115200)')
@@ -145,7 +160,7 @@ def RestartSerial(port=6, BAUD = 115200):
     try:
         CloseSerial() #will pass if no port by ladybug name open
         
-        LadyBug = serial.Serial('COM' + str(port), BAUD)
+        LadyBug = serial.Serial('COM' + str(port), BAUD,timeout=timeout)
         return LadyBug #name of controllable CNC machine
     
     except Exception: #SerialException is proper but not working
@@ -161,53 +176,6 @@ def CloseSerial(machine = 'ladybug'):
     except NameError:
         pass
     
-def TiltCorrection(Initial,Final,Radius ='dynamic',X='default',Z='default'):
-    """When we tilt our object, we are also translating it in the Z and X directions.
-    this function takes the initial and final tilt position (in steps),
-    converts that to a change in angle,
-    and then determines the X and Z translation with trig.
-    Function returns what the new X and Z values SHOULD BE to retain focus.
-
-    Made dynamic, currently not symmetric forwards and backwards.
-    Have to think about what to do for fact that rotary motor shaft is not centered."""
-
-
-
-    #flat is pointed to the left
-
-    if X == 'default': #cannot assign globalX in function name or it happens at runtime
-        X = GlobalX
-    if Z == 'default':
-        Z = GlobalZ
-    if Radius == 'dynamic': #keeping track dynamically as opposed to a set value
-        global GlobalTOffset
-        GlobalTOffset = X - TCenter
-        TRadius = GlobalTOffset/XStepsPerMM
-
-    Z_Initial = round(TRadius*math.sin(RadiansPerStep*(Initial)),6)
-    X_Initial = round(TRadius*math.cos(RadiansPerStep*(Initial)),6)
-
-    Z_Final = round(TRadius*math.sin(RadiansPerStep*(Final)),6)
-    X_Final = round(TRadius*math.cos(RadiansPerStep*(Final)),6)
-
-    Z_Change = Z_Final-Z_Initial #in Millimeters
-    X_Change = X_Final-X_Initial
-
-    try:
-        Z_Change_Steps = round(ZStepsPerMM*Z_Change)
-        X_Change_Steps = -1 * round(XStepsPerMM*X_Change) #negative because starting from the left
-    except ZeroDivisionError:
-        print ("those are the saaaaaaame")
-
-        return False
-
-
-    Corrected_X = X - X_Change_Steps
-
-    Corrected_Z = Z - Z_Change_Steps
-        #should maybe keep track of missing steps from rounding
-    return Corrected_X,Corrected_Z
-
 
 def CalculateOverlap(XSteps,YSteps,PixelsPerStep=1,XWidth=640,YHeight=480):
     #basic function gives percent overlap based on x/y pixels per step (same value if straight scope)
@@ -225,23 +193,6 @@ def CalculateOverlap(XSteps,YSteps,PixelsPerStep=1,XWidth=640,YHeight=480):
     
     return (XOverlap,YOverlap,PixelsPerStep)
 
-def CalculateSpeed(distance):
-    #Just returns my terribly named speeds by distance traveled
-    #mostly in order to reduce vibrations for short distances
-    
-    if distance >= 1000:
-        SPEED = FASTERER    
-    elif 500 <= distance < 1000:
-        SPEED = FASTER
-    elif 150 <= distance < 500:
-        SPEED = FAST
-    elif 50 <= distance < 150:
-        SPEED = SLOW
-    else:
-        SPEED = SLOWER
-        
-    return (SPEED)
-    
     
 def DefineScan(XMin, XMax, YMin, YMax, ZMin, ZMax, RMin, RMax, XSteps=100, YSteps=100, ZSteps=1, RSteps=1):
     """core from stack exchange. https://stackoverflow.com/questions/20872912/raster-scan-pattern-python
@@ -249,19 +200,21 @@ def DefineScan(XMin, XMax, YMin, YMax, ZMin, ZMax, RMin, RMax, XSteps=100, YStep
     Important: Because its not inclusive in max, it will break if for instance you say rmin = 0 rmax = 0, so we add 1 to all maximums
     so if you dont want to go more than one Z or R, set for instance Zmin=Zmax and ZSteps = 1.
 
+    modified 3/19/20 to act with millimeters and floats (to two decimal places) 
+    
     returns a list of four lists which each contain the absolute positions at every point in a scan for x,y,z,r"""
 
-    XMax = XMax+1
-    YMax = YMax+1
-    ZMax = ZMax+1
-    RMax = RMax+1
+    XMax = XMax+0.01 #same idea as modifying steps before but this time with 0.01 mm
+    YMax = YMax+0.01
+    ZMax = ZMax+0.01
+    RMax = RMax+0.01
 
 
     # define some grids
-    xgrid = arange(XMin, XMax,XSteps)
-    ygrid = arange(YMin, YMax,YSteps)
+    xgrid = arange(XMin, XMax, XSteps)
+    ygrid = arange(YMin, YMax, YSteps)
     zgrid = arange(ZMin, ZMax, ZSteps)
-    rgrid = arange(RMin,RMax,RSteps)
+    rgrid = arange(RMin, RMax, RSteps)
 
     xscan = []
     yscan = []
@@ -310,7 +263,10 @@ def DefineScan(XMin, XMax, YMin, YMax, ZMin, ZMax, RMin, RMax, XSteps=100, YStep
             NewNewZScan.append(NewZScan[j])
             NewNewRScan.append(rgrid[i])
 
-    ScanLocations = {'X':NewNewXScan,'Y':NewNewYScan,'Z':NewNewZScan,'R':NewNewRScan}
+    ScanLocations = {'X':[round(num,2) for num in NewNewXScan],
+                     'Y':[round(num,2) for num in NewNewYScan],
+                     'Z':[round(num,2) for num in NewNewZScan],
+                     'R':[round(num,2) for num in NewNewRScan]}
     
     
     CalculateOverlap(XSteps,YSteps,PixelsPerStep=1)
@@ -320,6 +276,60 @@ def DefineScan(XMin, XMax, YMin, YMax, ZMin, ZMax, RMin, RMax, XSteps=100, YStep
     
     return(ScanLocations)
 
+
+
+#all assumes cv2 here
+def StartCamera(camera = 1, width = 1280, height = 960):
+
+    cap = cv2.VideoCapture(camera)
+    cap.set(3,1280)
+    cap.set(4,960)
+    
+    ret,junkframe = cap.read() #junk because must grab first frame THEN set LED controls
+    
+    return cap #and pass to TakePicture
+
+def TakePicture(cap):
+    
+    ret,frame = cap.read() 
+
+    return frame
+
+def SavePicture(name,frame):
+
+    cv2.imwrite(name,frame)
+    
+def CloseCamera(cap):
+
+    cap.release()
+
+
+def ControlDino(setting = "FLCLevel" ,value=6):
+    """uses dinolite windows batch file to control settings on EDGE plus model.
+    assumes batch file in same folder as this gui
+    Can change autoexposure or set value, which LEDs are on, and brightness as group
+    Some values are redundant or unavailable with my cam, E.G FLC control supercedes simple LED
+
+    "FLCLevel" --- 1-6 brightness, if  0 convert to LED off
+    "FLCSwitch": control quadrants, value is 1111, 1010...
+    "AE on": this means you CAN select exposure. Confusing
+    "AE off"
+    "EV": sets exposure values 16-220
+    """
+    
+
+    if setting == "FLCLevel":
+        subprocess.call('DN_DS_Ctrl.exe LED ON') #can't change FLC if it's already off
+                        
+        if value == 0:
+            setting = "LED off"
+            value = ""
+                
+
+    subprocess.call('DN_DS_Ctrl.exe ' + setting + " " + (str(value) if value else ""))
+        
+    
+    
 
 def GridScan(ScanLocations,conditions='default'):
 
@@ -334,7 +344,9 @@ def GridScan(ScanLocations,conditions='default'):
 
 
     """conditions will contain save location, filetype, resolution. num_failures. First time running default
-    is passed which contains standard conditions, but you can always specify it if you want to."""
+    is passed which contains standard conditions, but you can always specify it if you want to.
+
+    most of this is irrelevant in the windows GUI"""
 
     if conditions == 'default':
         save_location = filedialog.askdirectory()
@@ -363,130 +375,88 @@ def GridScan(ScanLocations,conditions='default'):
     num_pictures = len(XCoord) #remaining, not originally
     NumberOfRotations = len(set(RCoord))
     stepsPerRotation = ((max(RCoord)-min(RCoord))/len(set(RCoord)))
-
+  
     #print("Stepping {} per image".format(str(StepsPerRotation))) #just for debugging
     print("has failed and restarted {} times so far".format(str(num_failures)))
 
-    XGoTo(int(XCoord[0]))
-    YGoTo(int(YCoord[0]))
-    ZGoTo(int(ZCoord[0]))
-    #RGoTo(int(RCoord[0]))
-
-
+    cap = StartCamera()
+    
+    #DO ANY ADJUSTING OF CAMERA CONDITIONS HERE AFTER STARTING CAMERA
+    
 
     for i in range(num_pictures):
 
+        X = XCoord[i]
+        Y = YCoord[i]
+        Z = ZCoord[i]
+        R = RCoord[i]
+
+        #5 digits total with 2 decimals always and leading and trailing 0s if necessary
+
+        XStr = (''.join(filter(lambda i: i.isdigit(), ('{0:.2f}'.format(X))))).zfill(5)
+        YStr = (''.join(filter(lambda i: i.isdigit(), ('{0:.2f}'.format(Y))))).zfill(5)
+        ZStr = (''.join(filter(lambda i: i.isdigit(), ('{0:.2f}'.format(Z))))).zfill(5)
+        RStr = (''.join(filter(lambda i: i.isdigit(), ('{0:.2f}'.format(R))))).zfill(5)
+        
+                
         if i % 100 == 0: #every 100 pics
             print("{} of {} pictures remaining".format((num_pictures-i),original_pics))
-            GPIO.output(BEEP,GPIO.HIGH)
-            time.sleep(0.2)
-            GPIO.output(BEEP,GPIO.LOW)
 
-        folder = save_location + "/Z" + str(ZCoord[i]).zfill(4) + "R" + str(RCoord[i]).zfill(3) #will make new folder on each change in Z or R
+        folder = save_location + "/Z" + ZStr + "R" + RStr #will make new folder on each change in Z or R
         if not os.path.exists(folder): #should hopefully continue saving in the same folder after restart
             os.makedirs(folder)
 
 
         #go to locations
+ 
+        XGoTo(X)
+        YGoTo(Y)
+        ZGoTo(Z)
+        RGoTo(R)
 
-        XGoTo(int(XCoord[i]))
-        YGoTo(int(YCoord[i]))
-        ZGoTo(int(ZCoord[i]))
-        RGoTo(int(RCoord[i]))
+        #gcode confirmation movement block
+    
+        while True:
+            time.sleep(0.1)
+            positions = GetPositions()
+            if positions:
+                #print(positions['X'],positions['Y'],positions['Z'])
+                if (X == positions['X']
+                    and Y == positions['Y']
+                    and Z == positions['Z']
+                    ):
+                
+                    break #go ahead and take a picture
+                else:
+                    continue
 
-        time.sleep(0.1) #vibration control.
-
-
-
-        #changed from original to add more zfill and no "of"
-        name = "X" + str(XCoord[i]).zfill(5) + "Y" + str(YCoord[i]).zfill(5) + "Z" + str(ZCoord[i]).zfill(5) + "R" + str(RCoord[i]).zfill(4) + filetype
+                    
+                
+                        
+        print('synchronized pic')
+        name = "X" + XStr + "Y" + YStr + "Z" + ZStr + "R" + RStr + filetype
 
         """begin filesaving block"""
 
         try:
-            for w in range(3):
-
-                proc = subprocess.Popen(["fswebcam", "-r " + resolution, "--no-banner", folder + "/" + name, "-q"], stdout=subprocess.PIPE) #like check_call(infinite timeout)
-                output = proc.communicate(timeout=10)[0]
-
-                if os.path.isfile(folder + "/" + name): #better than checking time elapsed...
-                    if w > 0: #USB was restarted
-                        print ('Okay thanks bozo. Restarting with {}'.format(name))
-
-                    break #move on to next picture
-
-                elif (w <= 1): #usb got unplugged effing #hell
-
-                    #attempt to catch USB from https://stackoverflow.com/questions/1335507/keyboard-input-with-timeout-in-python
-                    print('HEY BOZO THE USB GOT UNPLUGGED UNPLUG IT AND PLUG IT BACK IN WITHIN {} SECONDS OR WE REBOOT'.format(timeallowed))
-                    print('check if {} failed'.format(name))
-
-                    GPIO.output(BEEP,GPIO.HIGH) #beep and bibrate
-
-                    time.sleep(timeallowed)
-
-                    GPIO.output(BEEP,GPIO.LOW)
-
-                else: #USB unpluged and it wasn't plugged in in time
-                    UpdatedX = XCoord[i:]
-                    UpdatedY = YCoord[i:]
-                    UpdatedZ = ZCoord[i:]
-                    UpdatedR = RCoord[i:]
-
-                    UpdatedScanLocations = {'X':UpdatedX, 'Y':UpdatedY, 'Z': UpdatedZ,'R':UpdatedR}
-
-                    num_failures +=1
-
-                    failed_pics.append(name)
-                    failure_times.append(time.time())
-
-                    conditions = {'save_location':save_location,
-                                  'R_Location':int(RCoord[i]),
-                                  'filetype':filetype,
-                                  'resolution':resolution,
-                                  'num_failures':num_failures,
-                                  'original_pics':original_pics,
-                                  'original_time':original_time,
-                                  'original_locations':original_locations,
-                                  'failed_pics':failed_pics,
-                                  'failure_times':failure_times} #after restart because no gui timeout after 0 seconds
-
-                    scan_params = [UpdatedScanLocations,conditions]
-                    print(scan_params)
-                    time.sleep(2)
-
-                    scan_file = open('/home/pi/Desktop/ladybug/scandata.pkl', 'wb') #hardcode scan location
-
-                    pickle.dump(scan_params,scan_file) #working!
-                    scan_file.close()
-
-                    print('restarting sorryyyyyy')
-
-                    restart()
-
-        except subprocess.TimeoutExpired: #does not catch USB UNPLUG. Catches if it takes too long because lag
-
-            print ("{} failed :( ".format(name))
-            proc.terminate() #corrective measure?
-            continue #move on. In true loop, it keeps trying the same picture since it shouldn't matter which one
-
-
-
+            frame = TakePicture(cap)
+            SavePicture(folder + "/" + name,frame) #check whether pic saved properly?
+        except Exception: #Filesaving errors go here
+            print('error taking pictures')
+            
+    
     print ('scan completed successfully after {} seconds! {} images taken and {} restarts'.format(time.strftime("%H:%M:%S", time.gmtime(time.time() - original_time)), str(original_pics),str(num_failures)))
-    try:
-        os.rename('/home/pi/Desktop/ladybug/scandata.pkl','/home/pi/Desktop/ladybug/scandataold.pkl') #quick fix to avoid infinite loop while still being able to analyze
-    except FileNotFoundError:
-        print('nooooooo failures! woo')
 
-    for i in range(5):
-        GPIO.output(BEEP,GPIO.HIGH)
-        time.sleep(0.2)
-        GPIO.output(BEEP,GPIO.LOW)
+    #go back to beginning simplifies testing, but could also set a park position
+    XGoTo(XCoord[0])
+    YGoTo(YCoord[0])
+    ZGoTo(ZCoord[0])
+    RGoTo(RCoord[0])
 
-    b = input('press enter to exit')
+    #beeping block
+    
 
-
-def XGoTo(XDest,speed = 2000):
+def XGoTo(XDest,speed = 10000):
     #everything being switched to milimeters at this point, sorry. 
 
     global GlobalX
@@ -496,11 +466,11 @@ def XGoTo(XDest,speed = 2000):
     
     GCode = GenerateCode(X,Y,Z,E,speed)
     SendGCode(GCode)
-    GlobalX = X
+    GlobalX = round(X,2)
     
     XPosition.configure(text="X: "+str(GlobalX) + "/" + str(XMax))
     
-def YGoTo(YDest,speed = 2000):
+def YGoTo(YDest,speed = 10000):
     #everything being switched to milimeters at this point, sorry. 
 
     global GlobalY
@@ -510,11 +480,11 @@ def YGoTo(YDest,speed = 2000):
     
     GCode = GenerateCode(X,Y,Z,E,speed)
     SendGCode(GCode)
-    GlobalY = Y
+    GlobalY = round(Y,2)
     
     YPosition.configure(text="Y: "+str(GlobalY) + "/" + str(YMax))
 
-def ZGoTo(ZDest,speed = 2000):
+def ZGoTo(ZDest,speed = 5000):
     #everything being switched to milimeters at this point, sorry. 
 
     global GlobalZ
@@ -524,7 +494,7 @@ def ZGoTo(ZDest,speed = 2000):
     
     GCode = GenerateCode(X,Y,Z,E,speed)
     SendGCode(GCode)
-    GlobalZ = Z
+    GlobalZ = round(Z,2)
     
     ZPosition.configure(text="Z: "+str(GlobalZ) + "/" + str(ZMax))    
 
@@ -538,26 +508,26 @@ def RGoTo(RDest,speed = 2000):
     
     GCode = GenerateCode(X,Y,Z,E,speed)
     SendGCode(GCode)
-    GlobalR = E
+    GlobalR = round(E,2)
     
-    RPosition.configure(text="R: "+str(GlobalR) + "/" + str(RMax))
+    #RPosition.configure(text="R: "+str(GlobalR) + "/" + str(RMax))
 
 
 def XGet(event):
     '''records enter press from text box (XEntry) and calls "go to specified location function'''
     try:
-        XDest = int(event.widget.get())
+        XDest = float(event.widget.get())
         XGoTo(XDest)
-    except ValueError: #hey dumbo enter an integer
-        print ("hey dumbo enter an integer")
+    except ValueError: #hey dumbo enter a number
+        print ("hey dumbo enter a number")
 
 def YGet(event):
     '''records enter press from text box (YEntry) and calls "go to specified location function'''
     try:
-        YDest = int(event.widget.get())
+        YDest = float(event.widget.get())
         YGoTo(YDest)
-    except ValueError: #hey dumbo enter an integer
-        print ("hey dumbo enter an integer")
+    except ValueError: #hey dumbo enter an number
+        print ("hey dumbo enter an number")
 
 
 
@@ -602,10 +572,10 @@ def MoveT(direction,numsteps,delay,ZXCorrect=False):
 def ZGet(event):
     '''records enter press from text box (ZEntry) and calls "go to specified location function'''
     try:
-        ZDest = int(event.widget.get())
+        ZDest = float(event.widget.get())
         ZGoTo(ZDest)
-    except ValueError: #hey dumbo enter an integer
-        print ("hey dumbo enter an integer")
+    except ValueError: #hey dumbo enter an number
+        print ("hey dumbo enter a number")
 
 
 
@@ -647,55 +617,43 @@ def Home():
 
 
 def MoveXLeftBig(): #dir distance delay
-    MoveX(XBACKWARD,100,FAST)
-    print("X moved to da left a lot!")
-
+    (XGoTo(GlobalX-BigXY),print('X decreased by',BigXY)) if (GlobalX-BigXY)>XMin else (XGoTo(XMin),print('X at Min ({})'.format(XMin)))
+    
 def MoveXLeftSmall():
-    MoveX(XBACKWARD,10,SLOW)
-    print("X moved to da left a little!")
+    (XGoTo(GlobalX-LittleXY),print('X decreased by',LittleXY)) if (GlobalX-LittleXY)>XMin else (XGoTo(XMin),print('X at Min ({})'.format(XMin)))
 
 def MoveXRightBig():
-    MoveX(XFORWARD,100,FAST)
-    print("X moved to da right a lot!")
+    (XGoTo(GlobalX+BigXY),print('X increased by',BigXY)) if (GlobalX+BigXY) < XMax else (XGoTo(XMax),print('X at Max ({})'.format(XMax)))
+    
 
 def MoveXRightSmall():
-    MoveX(XFORWARD,10,SLOW)
-    print("X moved to da right a little!")
-
+    (XGoTo(GlobalX+LittleXY),print('X increased by',LittleXY)) if (GlobalX+LittleXY) < XMax else (XGoTo(XMax),print('X at Max ({})'.format(XMax)))
+    
 
 def MoveYForwardBig():
-    MoveY(YFORWARD,100,FAST)
-    print("Y moved forward a lot!")
-
+    (YGoTo(GlobalY+BigXY),print('Y increased by',BigXY)) if (GlobalY+BigXY)<YMax else (YGoTo(YMax),print('Y at Max ({})'.format(YMax)))
+    
 def MoveYForwardSmall():
-    MoveY(YFORWARD,10,SLOW)
-    print("Y moved forward a little!")
-
+    (YGoTo(GlobalY+LittleXY),print('Y increased by',LittleXY)) if (GlobalY+LittleXY) < YMax else (YGoTo(YMax),print('Y at Max ({})'.format(YMax)))
+    
 def MoveYBackBig():
-    MoveY(YBACKWARD,100,FAST)
-    print("Y moved back a lot!")
-
+    (YGoTo(GlobalY-BigXY),print('Y decreased by',BigXY)) if (GlobalY-BigXY)>YMin else (YGoTo(YMin),print('Y at Min ({})'.format(YMin)))
+    
 def MoveYBackSmall():
-    MoveY(YBACKWARD,10,SLOW)
-    print("Y moved back a little!")
+    (YGoTo(GlobalY-LittleXY),print('Y decreased by',LittleXY)) if (GlobalY-LittleXY)>YMin else (YGoTo(YMin),print('Y at Min ({})'.format(YMin)))
 
 
 
 def MoveZDownBig(): #dir dis delay
-    MoveZ(ZBACKWARD,250,FASTER) #faster than others to reduce time on
-    print("Z moved down a lot!")
+    (ZGoTo(GlobalZ-BigZ),print('Z decreased by',BigZ)) if (GlobalZ-BigZ)>ZMin else (ZGoTo(ZMin),print('Z at Min ({})'.format(ZMin)))
 
 def MoveZDownSmall():
-    MoveZ(ZBACKWARD,25,FAST)
-    print("Z moved down a little!")
-
+    (ZGoTo(GlobalZ-LittleZ),print('Z decreased by',LittleZ)) if (GlobalZ-LittleZ)>ZMin else (ZGoTo(ZMin),print('Z at Min ({})'.format(ZMin)))
 def MoveZUpBig():
-    MoveZ(ZFORWARD,250,FASTER)
-    print("Z moved up a lot!")
+    (ZGoTo(GlobalZ+BigZ),print('Z increased by',BigZ)) if (GlobalZ+BigZ)<ZMax else (ZGoTo(ZMax),print('Z at Max ({})'.format(ZMax)))
 
 def MoveZUpSmall():
-    MoveZ(ZFORWARD,25,FAST)
-    print("Z moved up a little!")
+    (ZGoTo(GlobalZ+LittleZ),print('Z increased by',LittleZ)) if (GlobalZ+LittleZ)<ZMax else (ZGoTo(ZMax),print('Z at Max ({})'.format(ZMax)))
 
 def MoveRCWSmall():
     #cw when staring down at spindle or object
@@ -831,6 +789,8 @@ SecondaryBottomFrame.pack(side=tk.TOP)
 try:
 	
     LadyBug = RestartSerial() #initiate GCODE based machine
+    time.sleep(3)
+    EngageSteppers() #prevents default timeout from happening
 
     #LaserTest = DefineScan(1100,1300,600,800,0,0,0,0,20,20) #placed in a random location so it will get lost
 
