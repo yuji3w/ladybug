@@ -303,6 +303,43 @@ def CloseCamera(cap):
 
     cap.release()
 
+def CalculateBlur(frame): 
+    blur = cv2.Laplacian(frame, cv2.CV_64F).var()
+    return blur
+
+def ShowImage(frame):
+    cv2.imshow('X: ' + str(GlobalX) + 'Y: ' + str(GlobalY) + 'Z: ' + str(GlobalZ),frame)
+    
+
+def FindZFocus(ZCoord,GoToFocus = True, camera='default'):
+    if camera == 'default':
+        camera = cap #still don't know the best way to say this
+    frames = []
+    blurs = []
+    
+    for Z in ZCoord: #ZCoord list of Z values to go to
+        ZGoTo(Z)
+        while True:
+            positions = GetPositions()
+            if positions['Z'] == Z: #我们到了
+                break
+            else:
+                time.sleep(0.05)
+        time.sleep(0.1) #vibration control
+        frame = TakePicture(camera)
+        blur = CalculateBlur(frame)
+        frames.append(frame)
+        blurs.append(blur)
+
+
+    ZFocus = ZCoord[blurs.index(max(blurs))]
+
+    if GoToFocus:
+        ZGoTo(ZFocus)
+        
+    return ZFocus
+
+    
 
 def ControlDino(setting = "FLCLevel" ,value=6):
     """uses dinolite windows batch file to control settings on EDGE plus model.
@@ -433,14 +470,27 @@ def GridScan(ScanLocations,conditions='default'):
                     
                 
                         
-        print('synchronized pic')
+        #print('synchronized pic')
         name = "X" + XStr + "Y" + YStr + "Z" + ZStr + "R" + RStr + filetype
 
         """begin filesaving block"""
 
         try:
             frame = TakePicture(cap)
-            SavePicture(folder + "/" + name,frame) #check whether pic saved properly?
+            SavePicture(folder + "/" + 'point0second' + name ,frame) #check whether pic saved properly
+            time.sleep(0.1) #in case of lag and for vibration
+            frame = TakePicture(cap)
+            SavePicture(folder + "/" + 'point1second' + name,frame) #check whether pic saved properly
+            time.sleep(0.1) #in case of lag and for vibration
+            frame = TakePicture(cap)
+            SavePicture(folder + "/" + 'point2second' + name,frame) #check whether pic saved properly
+            time.sleep(0.1) #in case of lag and for vibration
+            frame = TakePicture(cap)
+            SavePicture(folder + "/" + 'point3second' + name,frame) #check whether pic saved properly
+            time.sleep(0.1) #in case of lag and for vibration
+            frame = TakePicture(cap)
+            SavePicture(folder + "/" + 'point4second' + name,frame) #check whether pic saved properly
+                        
         except Exception: #Filesaving errors go here
             print('error taking pictures')
             
@@ -680,7 +730,7 @@ def MoveTDownSmall():
 #BEGIN WHAT GOES ONSCREEN
 
 win.title("Raspberry Pi GUI")
-win.geometry('1400x880')
+win.geometry('640x480')
 
 LeftFrame = tk.Frame(win)
 LeftFrame.pack(side = tk.LEFT)
@@ -765,17 +815,17 @@ HomeZButton = tk.Button(BottomFrame, text = "HOME Z", font = myFont, command = H
 HomeZButton.pack(side = tk.BOTTOM,pady=5)
 
 
-RCWSmallButton = tk.Button(BottomFrame, text = "↻", font = myBigFont, command = MoveRCWSmall, height = 1, width = 2)
-RCWSmallButton.pack(side = tk.BOTTOM, pady=5)
+#RCWSmallButton = tk.Button(BottomFrame, text = "↻", font = myBigFont, command = MoveRCWSmall, height = 1, width = 2)
+#RCWSmallButton.pack(side = tk.BOTTOM, pady=5)
 
-RCCWSmallButton = tk.Button(BottomFrame, text = "↺", font = myBigFont, command = MoveRCCWSmall, height = 1, width = 2)
-RCCWSmallButton.pack(side = tk.BOTTOM,pady=5)
+#RCCWSmallButton = tk.Button(BottomFrame, text = "↺", font = myBigFont, command = MoveRCCWSmall, height = 1, width = 2)
+#RCCWSmallButton.pack(side = tk.BOTTOM,pady=5)
 
-TUpSmallButton = tk.Button(BottomFrame, text = "TUP", font = myBigFont, command = MoveTUpSmall, height = 1, width = 2)
-TUpSmallButton.pack(side = tk.BOTTOM, pady=5)
+#TUpSmallButton = tk.Button(BottomFrame, text = "TUP", font = myBigFont, command = MoveTUpSmall, height = 1, width = 2)
+#TUpSmallButton.pack(side = tk.BOTTOM, pady=5)
 
-TDownSmallButton = tk.Button(BottomFrame, text = "TDN", font = myBigFont, command = MoveTDownSmall, height = 1, width = 2)
-TDownSmallButton.pack(side = tk.BOTTOM,pady=5)
+#TDownSmallButton = tk.Button(BottomFrame, text = "TDN", font = myBigFont, command = MoveTDownSmall, height = 1, width = 2)
+#TDownSmallButton.pack(side = tk.BOTTOM,pady=5)
 
 
 SecondaryBottomFrame = tk.Frame(BottomFrame)
