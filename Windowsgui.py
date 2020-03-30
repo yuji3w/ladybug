@@ -87,7 +87,7 @@ def GenerateCode(X,Y,Z,E, speed = 2000):
     line += " F"
     line += str(speed) #feedrate in units/minute
     
-
+    
     return line
 
 
@@ -101,9 +101,12 @@ def SendGCode(GCode,machine='ladybug'):
     #return(GCode)
     BytesGCode = GCode.encode('utf-8')
     machine.write(BytesGCode)
+    #time.sleep(0.02) #this is for potential conflicts of calling gcodes too fast
 
 def EngageSteppers():
     SendGCode("M84 S3600") #tells it not to turn off motors for S seconds (default 60 grr)
+    SendGCode("M302 P1") #PREVENTS ERRORS FROM 'cold' EXTRUSION
+    SendGCode("M203 Z50") #lets z go a bit faster
     SendGCode("M17") #engage steppers
 
 def DisengageSteppers():
@@ -111,7 +114,6 @@ def DisengageSteppers():
 
 def GetPositions(machine = 'ladybug'):
     #returns dictionary X,Y,Z and maybe R of actual position at time of request
-    #known issues of    
 
     sleeptime = 0.02
     
@@ -132,7 +134,7 @@ def GetPositions(machine = 'ladybug'):
             return False
         
         if 'Count' in dump: #precedes actual position data
-
+    
             remainder = dump[dump.find('Count'):] #has actual position
             
             Xraw = remainder[remainder.find('X:'):remainder.find('Y')]
@@ -143,8 +145,6 @@ def GetPositions(machine = 'ladybug'):
             Y = float(''.join([s for s in Yraw if (s.isdigit() or s == '.')]).strip())
             Z = float(''.join([s for s in Zraw if (s.isdigit() or s == '.')]).strip())
 
-            #if ('.' not in X) or ('.' not in X) or ('.' not in X):
-                #readline sometimes inconsistent. Common denominatior
             positions = {'X':X,'Y':Y,'Z':Z,'delay':i*sleeptime,'raw':dump,'prev':previous_buffer}
             return positions
         else:
@@ -307,8 +307,19 @@ def CalculateBlur(frame):
     blur = cv2.Laplacian(frame, cv2.CV_64F).var()
     return blur
 
-def ShowImage(frame):
-    cv2.imshow('X: ' + str(GlobalX) + 'Y: ' + str(GlobalY) + 'Z: ' + str(GlobalZ),frame)
+def ShowPicture(frame):
+    cv2.imshow('X:' + str(GlobalX) + ' Y:' + str(GlobalY) + ' Z:' + str(GlobalZ),frame)
+    
+
+def FindZWalk(TotalRadius = 1, Start = GlobalZ, PrecisionInitial = 0.2, PrecisionFinal = 0.05, ):
+    """given a min and max value to look through, calls FindZFocus iteratively
+    until desired focus precision is reached"""
+
+    CurrentPrecision = PrecisionInitial
+    MinZ = Start - TotalRadius
+    MaxZ = Start + TotalRadius
+
+    
     
 
 def FindZFocus(ZCoord,GoToFocus = True, camera='default'):
@@ -316,6 +327,9 @@ def FindZFocus(ZCoord,GoToFocus = True, camera='default'):
         camera = cap #still don't know the best way to say this
     frames = []
     blurs = []
+
+    if GlobalZ == ZCoord[-1]: #flip if starting at top
+        ZCoord.reverse()
     
     for Z in ZCoord: #ZCoord list of Z values to go to
         ZGoTo(Z)
@@ -333,15 +347,15 @@ def FindZFocus(ZCoord,GoToFocus = True, camera='default'):
 
 
     ZFocus = ZCoord[blurs.index(max(blurs))]
-
+    BestFrame = frames[blurs.index(max(blurs))]
     if GoToFocus:
         ZGoTo(ZFocus)
         
-    return ZFocus
+    return (ZFocus,BestFrame)
 
     
 
-def ControlDino(setting = "FLCLevel" ,value=6):
+def ControlDino(setting = "FLCLevel 6"):
     """uses dinolite windows batch file to control settings on EDGE plus model.
     assumes batch file in same folder as this gui
     Can change autoexposure or set value, which LEDs are on, and brightness as group
@@ -355,156 +369,147 @@ def ControlDino(setting = "FLCLevel" ,value=6):
     """
     
 
-    if setting == "FLCLevel":
+    if "FLCLevel" in setting:
         subprocess.call('DN_DS_Ctrl.exe LED ON') #can't change FLC if it's already off
-                        
-        if value == 0:
+        if '0' in setting:
             setting = "LED off"
-            value = ""
-                
+                            
 
-    subprocess.call('DN_DS_Ctrl.exe ' + setting + " " + (str(value) if value else ""))
+    subprocess.call('DN_DS_Ctrl.exe ' + setting)    
         
     
-    
 
-def GridScan(ScanLocations,conditions='default'):
 
+DefaultScan = {'FileType':".jpg",'Width':1280,'Height':960
+                  ,'CameraSettings': [],'Restarted Scan':False,
+                  "AutoFocus":False, "Z Heights": [],
+               'ScanLocations':{'X':[],'Y':[],'Z':[],'R':[]},
+               "Save Location":"", "Start Time":0, "PointInScan": 0,
+               "Failures":[], "Vibration Control":0.12   }
+           
+def GridScan(ScanConditions): # DefaultScan dictionary available for modifying
+
+    if not ScanConditions['Restarted Scan']:
+        save_location = filedialog.askdirectory()
+        start_time = time.time()
+        
+    else:
+        save_location = ScanConditions['Save Location']
+        start_time = ScanConditions['Start Time']
+
+    Width = ScanConditions['Width']
+    Height = ScanConditions['Height']
+    FileType = ScanConditions['FileType']
+    Failures = ScanConditions['Failures']
+    AutoFocus = ScanConditions['AutoFocus'] #true or false
+    PotentialZ = ScanConditions['Z Heights']
+    PointInScan = ScanConditions['PointInScan']
+    ScanLocations = ScanConditions['ScanLocations']
+    CameraSettings = ScanConditions['CameraSettings']
+    VibrationControl = ScanConditions['Vibration Control']
+            
     XCoord = ScanLocations['X']
     YCoord = ScanLocations['Y']
     ZCoord = ScanLocations['Z']
     RCoord = ScanLocations['R']
 
-    start_time = time.time()
-
-    """Note that we have already added 1 in the DefineScan to account for half intervals"""
-
-
-    """conditions will contain save location, filetype, resolution. num_failures. First time running default
-    is passed which contains standard conditions, but you can always specify it if you want to.
-
-    most of this is irrelevant in the windows GUI"""
-
-    if conditions == 'default':
-        save_location = filedialog.askdirectory()
-        filetype = ".jpg"
-        resolution = "640x480" #fswebcam adjusts to be higher at least with alternate microscope I have
-        timeallowed = 5 #number of seconds you have to save the scan.
-        num_failures = 0
-        original_pics = len(XCoord)
-        original_time = start_time
-        original_locations = ScanLocations
-        failed_pics=[]
-        failure_times=[]
-
-    else:
-        save_location = conditions['save_location']
-        filetype = conditions['filetype']
-        resolution = conditions['resolution']
-        timeallowed=0 #after one restart we don't bother trying to save scan
-        num_failures=conditions['num_failures']
-        failed_pics=conditions['failed_pics']
-        failure_times=conditions['failure_times']
-        original_pics=conditions['original_pics']
-        original_time=conditions['original_time']
-        original_locations=conditions['original_locations']
-
-    num_pictures = len(XCoord) #remaining, not originally
-    NumberOfRotations = len(set(RCoord))
-    stepsPerRotation = ((max(RCoord)-min(RCoord))/len(set(RCoord)))
-  
-    #print("Stepping {} per image".format(str(StepsPerRotation))) #just for debugging
-    print("has failed and restarted {} times so far".format(str(num_failures)))
-
     cap = StartCamera()
     
     #DO ANY ADJUSTING OF CAMERA CONDITIONS HERE AFTER STARTING CAMERA
+    #Note: manual exposure settings are not absolute: you MUST move the camera
+    #before starting the scan to the same place you tested exposure setting
     
+    if CameraSettings:
+        for setting in CameraSettings[:-1]:
+            ControlDino(setting)
+            time.sleep(2)
+        ControlDino(setting) #why wait 2 seconds between commands if you don't have to
+            
 
-    for i in range(num_pictures):
+    for i in range(PointInScan,len(XCoord)): #pointinscan 0 default, invoked in restart 
 
         X = XCoord[i]
         Y = YCoord[i]
         Z = ZCoord[i]
         R = RCoord[i]
 
-        #5 digits total with 2 decimals always and leading and trailing 0s if necessary
-
-        XStr = (''.join(filter(lambda i: i.isdigit(), ('{0:.2f}'.format(X))))).zfill(5)
-        YStr = (''.join(filter(lambda i: i.isdigit(), ('{0:.2f}'.format(Y))))).zfill(5)
-        ZStr = (''.join(filter(lambda i: i.isdigit(), ('{0:.2f}'.format(Z))))).zfill(5)
-        RStr = (''.join(filter(lambda i: i.isdigit(), ('{0:.2f}'.format(R))))).zfill(5)
-        
-                
-        if i % 100 == 0: #every 100 pics
-            print("{} of {} pictures remaining".format((num_pictures-i),original_pics))
-
-        folder = save_location + "/Z" + ZStr + "R" + RStr #will make new folder on each change in Z or R
-        if not os.path.exists(folder): #should hopefully continue saving in the same folder after restart
-            os.makedirs(folder)
-
-
         #go to locations
  
         XGoTo(X)
         YGoTo(Y)
-        ZGoTo(Z)
+        if not AutoFocus: #I don't like this :(
+            ZGoTo(Z)
         RGoTo(R)
-
+        
         #gcode confirmation movement block
     
         while True:
             time.sleep(0.1)
             positions = GetPositions()
             if positions:
-                #print(positions['X'],positions['Y'],positions['Z'])
+    
                 if (X == positions['X']
                     and Y == positions['Y']
-                    and Z == positions['Z']
+                    and (Z == positions['Z'] or AutoFocus)
                     ):
                 
                     break #go ahead and take a picture
                 else:
                     continue
+        
+        #Picture taking block
+        
+        for i in range(3): #catches some failed pictures
+                                
+            try:
+                if not AutoFocus:
+                    time.sleep(VibrationControl) 
+                    frame = TakePicture(cap)
+                else:
+                    Z,frame = FindZFocus(PotentialZ,False,cap) #should rework to allow walking
 
+
+                #picture saving block
+
+                #5 digits total with 2 decimals always and leading and trailing 0s if necessary
+
+                XStr = (''.join(filter(lambda i: i.isdigit(), ('{0:.2f}'.format(X))))).zfill(5)
+                YStr = (''.join(filter(lambda i: i.isdigit(), ('{0:.2f}'.format(Y))))).zfill(5)
+                ZStr = (''.join(filter(lambda i: i.isdigit(), ('{0:.2f}'.format(Z))))).zfill(5)
+                RStr = (''.join(filter(lambda i: i.isdigit(), ('{0:.2f}'.format(R))))).zfill(5)
+                name = "X" + XStr + "Y" + YStr + "Z" + ZStr + "R" + RStr + FileType
+                folder = save_location + "/Z" + ZStr + "R" + RStr #will make new folder on each change in Z or R
+
+                if not os.path.exists(folder): #should hopefully continue saving in the same folder after restart
+                    os.makedirs(folder)
                     
+                SavePicture(folder + "/" + name,frame)
+                            
+            except Exception: #Filesaving errors go here
+                print('partial failure for picture {}'.format(name))
                 
-                        
-        #print('synchronized pic')
-        name = "X" + XStr + "Y" + YStr + "Z" + ZStr + "R" + RStr + filetype
 
-        """begin filesaving block"""
+            else: #successful pic
+                PointInScan +=1
+                if PointInScan % 50 == 0: #every 100 pics
+                    print("{} of {} pics woohoo".format(PointInScan,len(XCoord)))
 
-        try:
-            frame = TakePicture(cap)
-            SavePicture(folder + "/" + 'point0second' + name ,frame) #check whether pic saved properly
-            time.sleep(0.1) #in case of lag and for vibration
-            frame = TakePicture(cap)
-            SavePicture(folder + "/" + 'point1second' + name,frame) #check whether pic saved properly
-            time.sleep(0.1) #in case of lag and for vibration
-            frame = TakePicture(cap)
-            SavePicture(folder + "/" + 'point2second' + name,frame) #check whether pic saved properly
-            time.sleep(0.1) #in case of lag and for vibration
-            frame = TakePicture(cap)
-            SavePicture(folder + "/" + 'point3second' + name,frame) #check whether pic saved properly
-            time.sleep(0.1) #in case of lag and for vibration
-            frame = TakePicture(cap)
-            SavePicture(folder + "/" + 'point4second' + name,frame) #check whether pic saved properly
-                        
-        except Exception: #Filesaving errors go here
-            print('error taking pictures')
+                break                    
+
+        else:
+            print('total failure for picture {}'.format([X,Y,Z,R]))
+            Failures.append([X,Y,Z,R])
             
-    
-    print ('scan completed successfully after {} seconds! {} images taken and {} restarts'.format(time.strftime("%H:%M:%S", time.gmtime(time.time() - original_time)), str(original_pics),str(num_failures)))
+    #end of scan, retaking failed pictures goes here
+    print ('Failures: {}'.format(Failures))
+    print ('scan completed successfully! Time taken: {}'.format(time.strftime("%H:%M:%S", time.gmtime(time.time() - start_time))))
 
     #go back to beginning simplifies testing, but could also set a park position
     XGoTo(XCoord[0])
     YGoTo(YCoord[0])
-    ZGoTo(ZCoord[0])
+    if not AutoFocus: #Crash number 3
+        ZGoTo(ZCoord[0])
     RGoTo(RCoord[0])
-
-    #beeping block
-    
 
 def XGoTo(XDest,speed = 10000):
     #everything being switched to milimeters at this point, sorry. 
@@ -534,7 +539,7 @@ def YGoTo(YDest,speed = 10000):
     
     YPosition.configure(text="Y: "+str(GlobalY) + "/" + str(YMax))
 
-def ZGoTo(ZDest,speed = 5000):
+def ZGoTo(ZDest,speed = 1000):
     #everything being switched to milimeters at this point, sorry. 
 
     global GlobalZ
@@ -729,7 +734,7 @@ def MoveTDownSmall():
 
 #BEGIN WHAT GOES ONSCREEN
 
-win.title("Raspberry Pi GUI")
+win.title("Windows GUI")
 win.geometry('640x480')
 
 LeftFrame = tk.Frame(win)
