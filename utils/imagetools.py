@@ -1,3 +1,7 @@
+'''functions for splitting up images and recombining them based on focus
+core by yujie --- 4/4/2020
+'''
+
 import cv2
 import numpy as np
 
@@ -101,7 +105,7 @@ def reconstruct_max(list_iterators, final_dims, key = calculate_sharp):
   return prev_row
 
 ''' Returns an image from a combined iterable IMAGES, subdivided into 
-    IMAGES.SHAPE[0]//4 x IMAGES.SHAPE[1]//4 '''
+##    IMAGES.SHAPE[0]//4 x IMAGES.SHAPE[1]//4 '''
 def max_pool_subdivided_images(images, subdiv_dims = (4, 4)):
   subdiv_x, subdiv_y = subdiv_dims
   subimage_generators = [partition_image(image, (image.shape[0] // subdiv_x, 
