@@ -1,0 +1,9 @@
+Dino-Lite GUI CTRL History
+
+Version 1.0.2
+Release Date: 09/19/2019
+¡EAdded support to Dino-Lite Edge Plus AM4x17 Series
+
+Version 1.0.1
+Release Date: 12/30/2011
+¡ERelease DN_DOS_Ctrl

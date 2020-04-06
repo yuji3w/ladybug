@@ -1,0 +1,50 @@
+Dino-Lite DOS control version 1.16.0.0
+
+Use the command string below for controlling the Dino-Lite. Without the [Camera Index] the command applies to all cameras.
+
+DN_DS_Ctrl.exe [Camera Control] [Camera Index]
+
+[Camera Control]
+LED on                  :Turn on the first set of LED
+LED on 1                :Turn on the first set of LED (default)
+LED on 2                :Turn on the second set of LED if available
+LED off                 :Turn the LED Off
+AE on                   :Turn On Auto Exposure
+AE off                  :Turn Off Auto Exposure
+EV 16-220               :Set Exposure Value from 16 to 220
+SaveExposure            :Record Exposure Value to Setting.ini
+AntiFlicker On 50       :Set AntiFlicker to 50Hz
+AntiFlicker On 60       :Set AntiFlicker to 60Hz
+AntiFlicker Off 60      :Set AntiFlicker Off
+FLCSwitch 0000~1111     :Set FLC LED Status
+FLCLevel 1~6            :Set FLC LED Brightness
+AXILevel 0~6            :Set AXI Brightness
+INIT                    :Set Initialization
+
+[Camera Index]
+-CAM0 :All Cameras (default)
+-CAM1 :Camera 1             -CAM2 :Camera 2
+-CAM3 :Camera 3             -CAM4 :Camera 4
+-CAM5 :Camera 5             -CAM6 :Camera 6
+-CAM7 :Camera 7             -CAM8 :Camera 8
+
+Examples:
+  DN_DS_Ctrl.exe LED on                 ;Turn on all camera's LED
+  DN_DS_Ctrl.exe LED on 1 -CAM0         ;Turn on all camera's LED 1
+  DN_DS_Ctrl.exe LED on 2 -CAM0         ;Turn on all camera's LED 2
+  DN_DS_Ctrl.exe LED off -CAM0          ;Turn off all camera's LED
+  DN_DS_Ctrl.exe LED on 1 -CAM1         ;Turn on camera-1 LED 1
+  DN_DS_Ctrl.exe LED on 2 -CAM1         ;Turn on camera-1 LED 2
+  DN_DS_Ctrl.exe LED off -CAM1          ;Turn off camera-1 LED
+  DN_DS_Ctrl.exe AE off -CAM0           ;Turn off all camera's auto exposure
+  DN_DS_Ctrl.exe AE on -CAM0            ;Turn on all camera's auto exposure
+  DN_DS_Ctrl.exe EV 16 -CAM0            ;Set all camera's exposure value to 16
+  DN_DS_Ctrl.exe EV 100 -CAM0           ;Set all camera's exposure value to 100
+  DN_DS_Ctrl.exe EV 200 -CAM0           ;Set all camera's exposure value to 200
+  DN_DS_Ctrl.exe AntiFlicker On 50      ;Set AntiFlicker to 50Hz
+  DN_DS_Ctrl.exe AntiFlicker On 60      ;Set AntiFlicker to 60Hz
+  DN_DS_Ctrl.exe AntiFlicker Off        ;Set AntiFlicker Off
+  DN_DS_Ctrl.exe FLCSwitch 1010         ;Set FLC LED Status to 1010
+  DN_DS_Ctrl.exe FLCLevel 3             ;Set FLC Brightness to level 3
+  DN_DS_Ctrl.exe AXILevel 4             ;Set AXI Brightness to level 4
+  DN_DS_Ctrl.exe INIT                   ;Set Initialization

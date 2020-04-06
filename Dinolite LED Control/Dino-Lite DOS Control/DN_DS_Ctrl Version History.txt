@@ -1,0 +1,74 @@
+Dino-Lite DOS Control Version History
+
+Version 1.16.0.0
+Release Date: 09/04/2019
+¡EAdded support to Dino-Lite Edge Plus AM4x17 Series
+
+Version 1.15.0.0
+Release Date: 04/23/2019
+¡EFixed general bugs 
+
+Version 1.14.0.0
+Release Date: 04/19/2019
+¡EAdded support to Dino-Lite Edge AF4x15/AF3xxx Series 
+
+Version 1.13.0.0
+Release Date: 12/11/2017
+¡EAdded support to Dino-Lite Edge3.0 AM73x15 Series 
+
+Version 1.12.0.0
+Release Date: 10/28/2016
+¡EFixed LED On/Off issue for Dino-Lite Edge AM7x15 Series 
+
+Version 1.11.0.0
+Release Date: 05/05/2016
+¡EAdd LED Control to Dino-Lite Edge 7x15 Series 
+¡EAdd Init to Dino-Lite Edge 4815/7815/7915 Series
+¡EAdd Anti Flicker Control
+¡EFix bugs 
+
+Version 1.10.0.0
+Release Date: 03/10/2016
+¡EFix bugs 
+
+Version 1.9.0.0
+Release Date: 11/14/2015
+¡EFix bugs 
+
+Version 1.9.0.0
+Release Date: 11/14/2015
+¡EFix bugs 
+
+Version 1.8.0.0
+Release Date: 11/14/2014
+¡EFix bugs 
+
+Version 1.7.0.0
+Release Date: 03/05/2014
+¡EAdd LED and exposure controls for Dino-Lite Premier 7013(R4) series and Dino-Lite Edge 7115 Series 
+
+
+Version 1.6.0.0
+Release Date: 09/10/2013
+¡EAdd LED and exposure controls for Dino-Lite Edge 4115 Series  
+¡EChanged DN_DOS_Ctrl into a installation package
+
+
+Version 1.5.0.0
+Release Date: 11/21/2012
+¡EAdd LED control for AM-4113RUT
+
+
+Version 1.4.0.0
+Release Date: 08/03/2012
+¡EFix bugs
+
+Version 1.3.0.0
+Release Date: 05/25/2012
+¡ERemove Dino-Lite Pro series Driver. It can be downloaded at: www.dino-lite.com/download.php
+¡EAdd debug log
+¡EFixed black bar issue for Dino-Lite Premier 4xxx series
+
+Version 1.0.0.0
+Release Date: 12/30/2011
+¡ERelease DN_DOS_Ctrl
