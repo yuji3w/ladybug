@@ -7,6 +7,7 @@ import random #for repeatability tests
 import time
 import math
 import os
+import string
 import tkinter as tk #contains GUI, can be removed if converted to headless
 from tkinter import font
 from tkinter import filedialog
@@ -16,8 +17,9 @@ import pickle #for saving scan data and resuming
 import serial 
 import subprocess
 import cv2
+import threading
 from PIL import Image, ImageTk
-
+from utils.imagetools import * #tools for manipulating images during scan
 
 #Distances from home position in steps for each motor.
 #Starts at "0" so if you don't have any switches just move them there before running the program.
@@ -309,7 +311,50 @@ def CalculateBlur(frame):
 
 def ShowPicture(frame):
     cv2.imshow('X:' + str(GlobalX) + ' Y:' + str(GlobalY) + ' Z:' + str(GlobalZ),frame)
+
+def ShowCamera(cap=False,camera_choice=1):
+    #best to call this with threading so you can use other gui controls 
+
+    if cap == False: #else pass in an explicit cap
+        cap = cv2.VideoCapture(camera_choice) #default 1 if on laptop with webcam
+
     
+    prev_img_name = 'im an image'
+    cv2.namedWindow("space to snap, esc to escape",cv2.WINDOW_NORMAL) #resize
+    cv2.resizeWindow('space to snap, esc to escape', 640,480) #small better for preview
+ 
+    while True:
+        ret, frame = cap.read()
+
+        
+        cv2.imshow("space to snap, esc to escape", frame)
+        
+        if not ret:
+            break
+        k = cv2.waitKey(1)
+
+        if k%256 == 27:
+            # ESC pressed
+            print("Escape hit, closing...")
+            break
+        elif k%256 == 32:
+            # SPACE pressed
+            img_name = MakeNameFromPositions(GlobalX,GlobalY,GlobalZ,GlobalR,'.jpg') 
+            if img_name == prev_img_name:
+                counter+=1
+                img_name = str(counter) + img_name
+            #this turned out to be weirdly hard to make it add number only if
+            #picture at location has been taken before.
+            #and this will still fail if you leave and come back
+            #but I gotta move on I got off track with this whole function
+            elif img_name != prev_img_name: 
+                counter = 0            
+
+            cv2.imwrite(img_name, frame)
+            print("{} written!".format(img_name))
+            prev_img_name = img_name.lstrip(string.digits) 
+
+cv2.destroyAllWindows()    
 
 def FindZWalk(TotalRadius = 1, Start = GlobalZ, PrecisionInitial = 0.2, PrecisionFinal = 0.05, ):
     """given a min and max value to look through, calls FindZFocus iteratively
@@ -320,7 +365,39 @@ def FindZWalk(TotalRadius = 1, Start = GlobalZ, PrecisionInitial = 0.2, Precisio
     MaxZ = Start + TotalRadius
 
     
+def ZStackKinda(ZCoord, subdiv_dims = (4,4),
+                SkipStackReturnFrames = False,
+                camera='default'):
+    """takes pictures at ZCoord and then can call max_pool_subdivided_images
+    with desired chunking amount and finally returns fakestacked image"""
+
+    if camera == 'default':
+        camera = cap #still don't know the best way to say this
+    frames = []
+
+    if GlobalZ == ZCoord[-1]: #flip if starting at top
+        ZCoord.reverse()
     
+    for Z in ZCoord: #ZCoord list of Z values to go to
+        ZGoTo(Z)
+        while True:
+            positions = GetPositions()
+            if positions['Z'] == Z: #我们到了
+                break
+            else:
+                time.sleep(0.05)
+        time.sleep(0.05) #vibration control
+        frame = TakePicture(camera)
+        frames.append(frame)
+
+    if SkipStackReturnFrames: #I might just use this for quick Z pics
+        return frames
+    
+    Stacked = max_pool_subdivided_images(frames, subdiv_dims)
+
+    return Stacked
+
+
 
 def FindZFocus(ZCoord,GoToFocus = True, camera='default'):
     if camera == 'default':
@@ -353,7 +430,15 @@ def FindZFocus(ZCoord,GoToFocus = True, camera='default'):
         
     return (ZFocus,BestFrame)
 
+def MakeNameFromPositions(X,Y,Z,R,FileType = ".jpg"):
     
+    XStr = (''.join(filter(lambda i: i.isdigit(), ('{0:.2f}'.format(X))))).zfill(5)
+    YStr = (''.join(filter(lambda i: i.isdigit(), ('{0:.2f}'.format(Y))))).zfill(5)
+    ZStr = (''.join(filter(lambda i: i.isdigit(), ('{0:.2f}'.format(Z))))).zfill(5)
+    RStr = (''.join(filter(lambda i: i.isdigit(), ('{0:.2f}'.format(R))))).zfill(5)
+    name = "X" + XStr + "Y" + YStr + "Z" + ZStr + "R" + RStr + FileType
+    return name
+
 
 def ControlDino(setting = "FLCLevel 6"):
     """uses dinolite windows batch file to control settings on EDGE plus model.
@@ -473,11 +558,7 @@ def GridScan(ScanConditions): # DefaultScan dictionary available for modifying
 
                 #5 digits total with 2 decimals always and leading and trailing 0s if necessary
 
-                XStr = (''.join(filter(lambda i: i.isdigit(), ('{0:.2f}'.format(X))))).zfill(5)
-                YStr = (''.join(filter(lambda i: i.isdigit(), ('{0:.2f}'.format(Y))))).zfill(5)
-                ZStr = (''.join(filter(lambda i: i.isdigit(), ('{0:.2f}'.format(Z))))).zfill(5)
-                RStr = (''.join(filter(lambda i: i.isdigit(), ('{0:.2f}'.format(R))))).zfill(5)
-                name = "X" + XStr + "Y" + YStr + "Z" + ZStr + "R" + RStr + FileType
+                name  = MakeNameFromPositions(X,Y,Z,R,FileType)
                 folder = save_location + "/Z" + ZStr + "R" + RStr #will make new folder on each change in Z or R
 
                 if not os.path.exists(folder): #should hopefully continue saving in the same folder after restart
@@ -634,6 +715,7 @@ def ZGet(event):
 
 
 
+
 def HomeX():
     global GlobalX
 
@@ -728,7 +810,14 @@ def MoveTDownSmall():
     MoveT(TBACKWARD, 8, SLOW)
     print("You tilted something down a bit!")
 
-
+def StartThreadedCamera():
+    
+    global cap #can I do this so that cap stays if it's made this way
+    cap = StartCamera()
+    
+    x = threading.Thread(target=ShowCamera, args=([cap]))
+    x.start()
+    
 #BUTTONS FOR SETTING SCAN PARAMETERS
 
 
@@ -818,6 +907,10 @@ HomeYButton.pack(side = tk.BOTTOM,pady=5)
 
 HomeZButton = tk.Button(BottomFrame, text = "HOME Z", font = myFont, command = HomeZ, height = 2, width =8 )
 HomeZButton.pack(side = tk.BOTTOM,pady=5)
+
+ShowCameraButton = tk.Button(BottomFrame, text = "CAM", font = myBigFont, command = StartThreadedCamera, height = 1, width = 10)
+ShowCameraButton.pack(side = tk.BOTTOM, pady=5)
+
 
 
 #RCWSmallButton = tk.Button(BottomFrame, text = "↻", font = myBigFont, command = MoveRCWSmall, height = 1, width = 2)
