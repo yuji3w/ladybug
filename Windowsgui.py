@@ -20,6 +20,8 @@ import cv2
 import threading
 from PIL import Image, ImageTk
 from utils.imagetools import * #tools for manipulating images during scan
+from utils.pickandplace import * #Automated PCB inspection test
+import tsp #traveling salesman module. Requires pandas
 
 #Distances from home position in steps for each motor.
 #Starts at "0" so if you don't have any switches just move them there before running the program.
@@ -153,6 +155,23 @@ def GetPositions(machine = 'ladybug'):
             time.sleep(sleeptime) #and loop back to try again
     print('communication lag --- check USB cable or port if frequent')    
     return(False)
+
+def WaitForConfirmMovements(X,Y,Z):
+    #calls get_positions until positions returned is positions desired
+    
+    while True:
+            time.sleep(0.05)
+            positions = GetPositions()
+            if positions:
+    
+                if (math.isclose(X,positions['X'],abs_tol=0.02) #microns getting lost
+                    and math.isclose(Y,positions['Y'],abs_tol=0.02)
+                    and math.isclose(Z,positions['Z'],abs_tol=0.02)
+                    ):
+                
+                    return (positions) #we have arrived
+                else:
+                    continue
 
 def RestartSerial(port=8, BAUD = 115200,timeout=timeout):
 
@@ -464,6 +483,7 @@ def ControlDino(setting = "FLCLevel 6"):
         
     
 
+        
 
 DefaultScan = {'FileType':".jpg",'Width':1280,'Height':960
                   ,'CameraSettings': [],'Restarted Scan':False,
@@ -527,8 +547,9 @@ def GridScan(ScanConditions): # DefaultScan dictionary available for modifying
         RGoTo(R)
         
         #gcode confirmation movement block
-    
-        while True:
+
+        WaitForConfirmMovement(X,Y,(Z if not AutoFocus else GlobalZ))
+        '''while True:
             time.sleep(0.1)
             positions = GetPositions()
             if positions:
@@ -541,7 +562,7 @@ def GridScan(ScanConditions): # DefaultScan dictionary available for modifying
                     break #go ahead and take a picture
                 else:
                     continue
-        
+        '''
         #Picture taking block
         
         for i in range(3): #catches some failed pictures
@@ -634,6 +655,29 @@ def ZGoTo(ZDest,speed = 1000):
     
     ZPosition.configure(text="Z: "+str(GlobalZ) + "/" + str(ZMax))    
 
+def AllGoTo(XDest=-1,YDest=-1,ZDest=-1,RDest=-1,speed = 3000): 
+    
+    global GlobalX,GlobalY,GlobalZ,GlobalR
+    
+    if XDest < 0: #Can't declare global at runtime...
+        XDest = GlobalX
+    if YDest < 0:
+        YDest = GlobalY #can't set = 0 as false because 0 is valid location...
+    if ZDest < 0:
+        ZDest = GlobalZ #can do 'default' but bah.
+    if RDest < 0:
+        RDest = GlobalR
+        
+    X,Y,Z,E = XDest,YDest,ZDest,RDest        
+    
+    GCode = GenerateCode(X,Y,Z,E,speed)
+    SendGCode(GCode)
+    GlobalX,GlobalY,GlobalZ,GlobalE = round(X,2),round(Y,2),round(Z,2),round(E,2)
+    
+    XPosition.configure(text="X: "+str(GlobalX) + "/" + str(XMax))    
+    YPosition.configure(text="Y: "+str(GlobalY) + "/" + str(YMax))
+    ZPosition.configure(text="Z: "+str(GlobalZ) + "/" + str(ZMax))
+    
 def RGoTo(RDest,speed = 2000):
     #everything being switched to milimeters at this point, sorry. 
 
@@ -751,7 +795,68 @@ def Home():
     GlobalX = 0
     XPosition.configure(text="X: "+str(GlobalX) + "/" + str(XMax))
 
+def InitiatePCBTools():
+    #called by gui and deals with information from pickandplace module
+    PCBLocation = filedialog.askopenfilename ()
 
+    designators, columns, rows = GetLocations(PCBLocation)
+
+    DesignatorKeys = list(designators)
+    ListOfCoordinateTuples = [] #list order becomes important here
+    for key in DesignatorKeys:
+        ListOfCoordinateTuples.append(designators[key])
+        
+    
+    while True:
+        print('board components are {}'.format(DesignatorKeys))
+        
+        choice = input("enter component name to goto and snap picture or 'all' to do all. Control C to exit")
+        
+        try:
+            if choice.lower() == 'all':
+                print('this may take a sec. traveling salesman problem grr')
+                PathChoice, TotalDistance = ShortestPath(ListOfCoordinateTuples)
+                print('got it! optimum distance = {} mm '.format(TotalDistance))
+                for node in PathChoice:
+                  component = DesignatorKeys[node]
+                  location = ListOfCoordinateTuples[node]
+                  AllGoTo(location[0],location[1]) #NOTE. breaks genericness of any size coordinates
+                  WaitForConfirmMovements(location[0],location[1],GlobalZ)
+                  time.sleep(0.1) #for vibration, could be longer for human inpu
+                  frame = TakePicture(cap) #assumes you already opened cam preview
+                  SavePicture(component + ".jpg",frame)
+
+                  
+            else: 
+                location = designators[choice]
+                AllGoTo(location[0],location[1]) #NOTE. breaks genericness of any size coordinates 
+                
+                WaitForConfirmMovements(location[0],location[1],GlobalZ)
+                time.sleep(0.1) #for vibration, could be longer for human input
+                frame = TakePicture(cap) #assumes you already opened cam preview
+                SavePicture(choice + ".jpg",frame)
+        except KeyError:
+            print('Sorry, invalid choice in key or programmer')
+            continue
+        except KeyboardInterrupt:
+            print('Thanks for flying with pcb tools v0.0')
+            return designators, columns, rows, PathChoice
+    
+    
+    return designators, columns, rows, PathChoice
+    
+
+
+def ShortestPath(ListOfCoordinateTuples):
+    #just calls tsp (traveling salesman problem) module
+    #could be replaced with something homebrewed for package reduction
+    #(needs pandas)
+    #Works with arbitrary dimensions within each tuple -- XY but also XYZ etc.
+
+    TotalDistance, PathChoice = tsp.tsp(ListOfCoordinateTuples)
+
+    return PathChoice, TotalDistance
+    
 
 def MoveXLeftBig(): #dir distance delay
     (XGoTo(GlobalX-BigXY),print('X decreased by',BigXY)) if (GlobalX-BigXY)>XMin else (XGoTo(XMin),print('X at Min ({})'.format(XMin)))
