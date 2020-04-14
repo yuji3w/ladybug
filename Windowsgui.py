@@ -21,7 +21,10 @@ import threading
 from PIL import Image, ImageTk
 from utils.imagetools import * #tools for manipulating images during scan
 from utils.pickandplace import * #Automated PCB inspection test
-import tsp #traveling salesman module. Requires pandas
+import tsp #traveling salesman module. Requires pandas. Really slow
+import utils.track_ball as ObjectTracker #adapted from greenball tracker
+import utils.findcolors as findcolors #for object tracking with color
+
 
 #Distances from home position in steps for each motor.
 #Starts at "0" so if you don't have any switches just move them there before running the program.
@@ -331,22 +334,26 @@ def CalculateBlur(frame):
 def ShowPicture(frame):
     cv2.imshow('X:' + str(GlobalX) + ' Y:' + str(GlobalY) + ' Z:' + str(GlobalZ),frame)
 
-def ShowCamera(cap=False,camera_choice=1):
+def ShowCamera(cap=False,camera_choice=1,TrackTheBug=True):
     #best to call this with threading so you can use other gui controls 
 
+    
     if cap == False: #else pass in an explicit cap
         cap = cv2.VideoCapture(camera_choice) #default 1 if on laptop with webcam
 
     
     prev_img_name = 'im an image'
-    cv2.namedWindow("space to snap, esc to escape",cv2.WINDOW_NORMAL) #resize
-    cv2.resizeWindow('space to snap, esc to escape', 640,480) #small better for preview
- 
+    
+    cv2.namedWindow("space to snap, esc to escape, f to toggle track",cv2.WINDOW_NORMAL) #resize
+    cv2.resizeWindow('space to snap, esc to escape, f to toggle track', 640,480) #small better for preview
+    
     while True:
         ret, frame = cap.read()
 
-        
-        cv2.imshow("space to snap, esc to escape", frame)
+        if TrackTheBug: #ruining my code to add support for this function
+            frame, x, y = KeepBugInCenter(frame)
+            
+        cv2.imshow("space to snap, esc to escape, f to toggle track", frame)
         
         if not ret:
             break
@@ -356,6 +363,11 @@ def ShowCamera(cap=False,camera_choice=1):
             # ESC pressed
             print("Escape hit, closing...")
             break
+        if k%256 == 102:
+            #f pressed. Toggle bug tracking
+            TrackTheBug = not TrackTheBug #swap 
+            print("Track the bug: {}".format(TrackTheBug))
+            
         elif k%256 == 32:
             # SPACE pressed
             img_name = MakeNameFromPositions(GlobalX,GlobalY,GlobalZ,GlobalR,'.jpg') 
@@ -364,8 +376,8 @@ def ShowCamera(cap=False,camera_choice=1):
                 img_name = str(counter) + img_name
             #this turned out to be weirdly hard to make it add number only if
             #picture at location has been taken before.
-            #and this will still fail if you leave and come back
-            #but I gotta move on I got off track with this whole function
+            #and this will still overwrite if you leave and come back
+            
             elif img_name != prev_img_name: 
                 counter = 0            
 
@@ -373,16 +385,52 @@ def ShowCamera(cap=False,camera_choice=1):
             print("{} written!".format(img_name))
             prev_img_name = img_name.lstrip(string.digits) 
 
-cv2.destroyAllWindows()    
+    cv2.destroyAllWindows()
+    
+def KeepBugInCenter(frame,PixelsPerUnit = 200, Width = 640,
+                    Height=480, thresh = 30,
+                    ColorLower = (29,86,6), ColorUpper = (64, 255, 255)
+                    ):
+    #we want to make X and Y be center of the frame --- width and height/2
+    #calls motion accordingly...
+    #this should be PID loop ideally 
 
-def FindZWalk(TotalRadius = 1, Start = GlobalZ, PrecisionInitial = 0.2, PrecisionFinal = 0.05, ):
-    """given a min and max value to look through, calls FindZFocus iteratively
-    until desired focus precision is reached"""
+    TrackerOutput = ObjectTracker.BallTracker(frame,
+                    ColorLower = ColorLower,
+                    ColorUpper = ColorUpper) #false if nothing detected
+    
+    
+    GoalX = Width/2
+    GoalY = Height/2
+    
+    if not TrackerOutput: #reinitialize balltracker variables
 
-    CurrentPrecision = PrecisionInitial
-    MinZ = Start - TotalRadius
-    MaxZ = Start + TotalRadius
+        return frame, GoalX, GoalY, #goals are just placeholders here
+        
+    
+    frame, x, y = TrackerOutput[0],TrackerOutput[1],TrackerOutput[2]
+    
+    
+    
+    XPixels = (GoalX-x)
+    YPixels = (GoalY-y)
 
+    if abs(XPixels) < thresh:
+        XPixels = 0
+    if abs(YPixels) < thresh:
+        YPixels = 0
+
+    XMovement = round(XPixels/PixelsPerUnit,1)
+    YMovement = round(YPixels/PixelsPerUnit,1)
+
+    XFinal = GlobalX - XMovement
+    YFinal = GlobalY + YMovement
+
+    if YMovement or XMovement:
+        
+        AllGoTo(XFinal,YFinal,GlobalZ,update=False) #not waiting for update yet
+
+    return frame, x, y    
     
 def ZStackKinda(ZCoord, subdiv_dims = (4,4),
                 SkipStackReturnFrames = False,
@@ -490,7 +538,8 @@ DefaultScan = {'FileType':".jpg",'Width':1280,'Height':960
                   "AutoFocus":False, "Z Heights": [],
                'ScanLocations':{'X':[],'Y':[],'Z':[],'R':[]},
                "Save Location":"", "Start Time":0, "PointInScan": 0,
-               "Failures":[], "Vibration Control":0.12   }
+               "Failures":[], "Vibration Control":0.12,
+               'Camera':False}
            
 def GridScan(ScanConditions): # DefaultScan dictionary available for modifying
 
@@ -502,6 +551,7 @@ def GridScan(ScanConditions): # DefaultScan dictionary available for modifying
         save_location = ScanConditions['Save Location']
         start_time = ScanConditions['Start Time']
 
+    cap = ScanConditions['Camera']
     Width = ScanConditions['Width']
     Height = ScanConditions['Height']
     FileType = ScanConditions['FileType']
@@ -518,7 +568,9 @@ def GridScan(ScanConditions): # DefaultScan dictionary available for modifying
     ZCoord = ScanLocations['Z']
     RCoord = ScanLocations['R']
 
-    cap = StartCamera()
+    if not cap: # already passed a camera object in
+        
+        cap = StartCamera()
     
     #DO ANY ADJUSTING OF CAMERA CONDITIONS HERE AFTER STARTING CAMERA
     #Note: manual exposure settings are not absolute: you MUST move the camera
@@ -548,7 +600,7 @@ def GridScan(ScanConditions): # DefaultScan dictionary available for modifying
         
         #gcode confirmation movement block
 
-        WaitForConfirmMovement(X,Y,(Z if not AutoFocus else GlobalZ))
+        WaitForConfirmMovements(X,Y,(Z if not AutoFocus else GlobalZ))
         '''while True:
             time.sleep(0.1)
             positions = GetPositions()
@@ -579,6 +631,9 @@ def GridScan(ScanConditions): # DefaultScan dictionary available for modifying
 
                 #5 digits total with 2 decimals always and leading and trailing 0s if necessary
 
+                ZStr = (''.join(filter(lambda i: i.isdigit(), ('{0:.2f}'.format(Z))))).zfill(5)
+                RStr = (''.join(filter(lambda i: i.isdigit(), ('{0:.2f}'.format(R))))).zfill(5)
+                
                 name  = MakeNameFromPositions(X,Y,Z,R,FileType)
                 folder = save_location + "/Z" + ZStr + "R" + RStr #will make new folder on each change in Z or R
 
@@ -655,7 +710,7 @@ def ZGoTo(ZDest,speed = 1000):
     
     ZPosition.configure(text="Z: "+str(GlobalZ) + "/" + str(ZMax))    
 
-def AllGoTo(XDest=-1,YDest=-1,ZDest=-1,RDest=-1,speed = 3000): 
+def AllGoTo(XDest=-1,YDest=-1,ZDest=-1,RDest=-1,speed = 3000,update=True): 
     
     global GlobalX,GlobalY,GlobalZ,GlobalR
     
@@ -673,10 +728,17 @@ def AllGoTo(XDest=-1,YDest=-1,ZDest=-1,RDest=-1,speed = 3000):
     GCode = GenerateCode(X,Y,Z,E,speed)
     SendGCode(GCode)
     GlobalX,GlobalY,GlobalZ,GlobalE = round(X,2),round(Y,2),round(Z,2),round(E,2)
+
+    if update:
+
+        #not updating tkinter allows function to be called from threaded process
+        
+        XPosition.configure(text="X: "+str(GlobalX) + "/" + str(XMax))    
+        YPosition.configure(text="Y: "+str(GlobalY) + "/" + str(YMax))
+        ZPosition.configure(text="Z: "+str(GlobalZ) + "/" + str(ZMax))
+
     
-    XPosition.configure(text="X: "+str(GlobalX) + "/" + str(XMax))    
-    YPosition.configure(text="Y: "+str(GlobalY) + "/" + str(YMax))
-    ZPosition.configure(text="Z: "+str(GlobalZ) + "/" + str(ZMax))
+
     
 def RGoTo(RDest,speed = 2000):
     #everything being switched to milimeters at this point, sorry. 
@@ -915,12 +977,17 @@ def MoveTDownSmall():
     MoveT(TBACKWARD, 8, SLOW)
     print("You tilted something down a bit!")
 
-def StartThreadedCamera():
+def StartThreadedCamera(FollowBool=False):
     
     global cap #can I do this so that cap stays if it's made this way
-    cap = StartCamera()
-    
-    x = threading.Thread(target=ShowCamera, args=([cap]))
+
+    try:
+        bool(cap) #variable even exists?
+    except NameError:
+        cap = StartCamera()
+
+    x = threading.Thread(target=ShowCamera, args=([cap,1,FollowBool]))
+    #x.setDaemon(True) #trying to fix main thread is not in main loop
     x.start()
     
 #BUTTONS FOR SETTING SCAN PARAMETERS
@@ -1040,14 +1107,14 @@ SecondaryBottomFrame.pack(side=tk.TOP)
 
 
 try:
-	
+    cap = StartCamera()
+    frame = TakePicture(cap) #for testing
+    
     LadyBug = RestartSerial() #initiate GCODE based machine
     time.sleep(3)
     EngageSteppers() #prevents default timeout from happening
-
-    #LaserTest = DefineScan(1100,1300,600,800,0,0,0,0,20,20) #placed in a random location so it will get lost
-
-
+    StartThreadedCamera()
+    
     scan_file = open('/home/pi/Desktop/ladybug/scandata.pkl', 'rb')
 
     scan_params = pickle.load(scan_file)
@@ -1067,5 +1134,6 @@ try:
     GridScan(locations,conditions)
 
 except FileNotFoundError:
-
+    
     print('no saved scan file found. doing nothing')
+    
