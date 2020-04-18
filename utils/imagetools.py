@@ -119,3 +119,16 @@ def frame_hue_bounded(frame, lower_bound = np.array([20, 100, 100]),
   upper_bound = np.array([30, 255, 255])):
   hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
   return cv2.inRange(hsv, lower_bound, upper_bound)
+
+''' Draws SUB_IMG on CANVAS at LOCATION[0], LOCATION[1]. '''
+def overlay(canvas, sub_img, location):
+	# TODO: preprocessing on sub_img so there's no overlap
+	# TODO: make sure that sub_img does not exceed location[1] + xs_len
+	yc_len, xc_len, cchannels = canvas.shape
+	ys_len, xs_len, schannels = sub_img.shape
+	canvas[location[0] : location[0] + ys_len, location[1] : location[1] + xs_len] = sub_img
+
+''' Converts from X and Y coordinates DIMS[0], DIMS[1] 
+    to XPIXELS and YPIXELS '''
+def absolute_to_pixels(dims, pixel_multiplier):
+	return (dims[0]*pixel_multiplier, dims[1] * pixel_multiplier)
