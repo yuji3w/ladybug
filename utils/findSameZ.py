@@ -20,10 +20,11 @@ def initZList(files, zFiles):
 	for file in files:
 		fileName = list(os.path.basename(file))
 		#need to get basename in list to mod chars
-		fileName[11] = '0'
-		fileName[12] = '0'
-		fileName[13] = '0'
+		fileName[13] = '0' #shifted from 11
 		fileName[14] = '0'
+		fileName[15] = '0'
+		fileName[16] = '0'
+		fileName[17] = '0' #added with jan 2020 filename change
 		#kills Z info to 0
 		fileName = "".join(fileName)
 		#put it back into string

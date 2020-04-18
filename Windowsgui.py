@@ -303,11 +303,11 @@ def DefineScan(XMin, XMax, YMin, YMax, ZMin, ZMax, RMin, RMax, XSteps=100, YStep
 
 
 #all assumes cv2 here
-def StartCamera(camera = 1, width = 1280, height = 960):
+def StartCamera(camera = 1, Width = 1280, Height = 960):
 
     cap = cv2.VideoCapture(camera)
-    cap.set(3,1280)
-    cap.set(4,960)
+    cap.set(3,Width)
+    cap.set(4,Height)
     
     ret,junkframe = cap.read() #junk because must grab first frame THEN set LED controls
     
@@ -334,27 +334,32 @@ def CalculateBlur(frame):
 def ShowPicture(frame):
     cv2.imshow('X:' + str(GlobalX) + ' Y:' + str(GlobalY) + ' Z:' + str(GlobalZ),frame)
 
-def ShowCamera(cap=False,camera_choice=1,TrackTheBug=True):
+def ShowCamera(cap=False,camera_choice=1,TrackTheBug=True,Width=640,Height=480):
     #best to call this with threading so you can use other gui controls 
-
+    #though really they should be integrated together.
+    #or some other third smaller solution
     
     if cap == False: #else pass in an explicit cap
         cap = cv2.VideoCapture(camera_choice) #default 1 if on laptop with webcam
 
     
     prev_img_name = 'im an image'
+    DefaultName = "space to snap, esc to escape, f toggles track, b resize, v video"
+    cv2.namedWindow(DefaultName,cv2.WINDOW_NORMAL) #resize
+    cv2.resizeWindow(DefaultName, Width,Height) #small better for preview
     
-    cv2.namedWindow("space to snap, esc to escape, f to toggle track",cv2.WINDOW_NORMAL) #resize
-    cv2.resizeWindow('space to snap, esc to escape, f to toggle track', 640,480) #small better for preview
+    #ColorLower, ColorUpper = (64,255,255) , (29,86,6) #green
     
+    ColorLowers = [(64,255,255),(10,100,20)] #note "s". cycle through to get color
+    ColorUppers = [(29,86,6),(20,255,200)] 
+    ColorsIndex = 0 #count and cycle through
+    NumberOfColors = len(ColorLowers)
+    
+    ColorLower, ColorUpper = ColorLowers[ColorsIndex],ColorUppers[ColorsIndex]
+
     while True:
         ret, frame = cap.read()
-
-        if TrackTheBug: #ruining my code to add support for this function
-            frame, x, y = KeepBugInCenter(frame)
-            
-        cv2.imshow("space to snap, esc to escape, f to toggle track", frame)
-        
+    
         if not ret:
             break
         k = cv2.waitKey(1)
@@ -363,14 +368,42 @@ def ShowCamera(cap=False,camera_choice=1,TrackTheBug=True):
             # ESC pressed
             print("Escape hit, closing...")
             break
+        if k%256 == ord('c'): #toggle color choice
+            ColorsIndex +=1
+            if ColorsIndex == NumberOfColors:
+                ColorsIndex = 0 
+            ColorLower, ColorUpper = ColorLowers[ColorsIndex],ColorUppers[ColorsIndex] #brown
+            print('colors tracked toggled. Green? Brown? who knows')
+        if k%256 == ord('v'): #toggle video
+            try:
+                out.release() #first close if not start
+                print('Ending video capture')
+                del out
+            except NameError: 
+                #VideoName = time.asctime().replace(" ","") + '.avi'
+                VideoName = "capture\\" + MakeNameFromPositions(GlobalX,GlobalY,GlobalZ,GlobalR,'.avi')
+                out = cv2.VideoWriter(VideoName,cv2.VideoWriter_fourcc('M','J','P','G'), 25, (Width,Height))
+                print('Starting video capture')
+        
+        
         if k%256 == 102:
             #f pressed. Toggle bug tracking
             TrackTheBug = not TrackTheBug #swap 
             print("Track the bug: {}".format(TrackTheBug))
+        if k%256 == ord('b'): #resize window
+            if Width == 640:
+                Width, Height = 1280,960
+            elif Width == 1280:
+                Width, Height = 640,480
             
+            print('width and height is now {},{}'.format(Width,Height))
+
+            cv2.resizeWindow(DefaultName,Width,Height)
+                
+                
         elif k%256 == 32:
-            # SPACE pressed
-            img_name = MakeNameFromPositions(GlobalX,GlobalY,GlobalZ,GlobalR,'.jpg') 
+            # SPACE pressed take picture
+            img_name = "capture\\" + MakeNameFromPositions(GlobalX,GlobalY,GlobalZ,GlobalR,'.jpg') 
             if img_name == prev_img_name:
                 counter+=1
                 img_name = str(counter) + img_name
@@ -384,6 +417,22 @@ def ShowCamera(cap=False,camera_choice=1,TrackTheBug=True):
             cv2.imwrite(img_name, frame)
             print("{} written!".format(img_name))
             prev_img_name = img_name.lstrip(string.digits) 
+        
+        if TrackTheBug: #ruining my code to add support for this function
+            frame, x, y = KeepBugInCenter(frame,Width=Width,Height=Height,
+            ColorLower = ColorLower, ColorUpper = ColorUpper )
+
+            #green # ColorLower = (29,86,6), ColorUpper = (64, 255, 255)
+            #brown (10, 100, 20),(20, 255, 200)
+            #black (0, 0, 0), (360, 100, 20) #bad
+            #experimental (124,40,0) , (168,103,255)
+
+        try:
+            out.write(frame)
+        except NameError:
+            pass
+        
+        cv2.imshow(DefaultName, frame)
 
     cv2.destroyAllWindows()
     
@@ -397,7 +446,8 @@ def KeepBugInCenter(frame,PixelsPerUnit = 200, Width = 640,
 
     TrackerOutput = ObjectTracker.BallTracker(frame,
                     ColorLower = ColorLower,
-                    ColorUpper = ColorUpper) #false if nothing detected
+                    ColorUpper = ColorUpper,
+                    Width=Width, Height=Height) #False if nothing detected 
     
     
     GoalX = Width/2
@@ -710,15 +760,18 @@ def ZGoTo(ZDest,speed = 1000):
     
     ZPosition.configure(text="Z: "+str(GlobalZ) + "/" + str(ZMax))    
 
-def AllGoTo(XDest=-1,YDest=-1,ZDest=-1,RDest=-1,speed = 3000,update=True): 
+def AllGoTo(XDest=-1,YDest=-1,ZDest=-1,RDest=-1,speed = 3000,update=True,
+            ): 
     
     global GlobalX,GlobalY,GlobalZ,GlobalR
+
+
     
-    if XDest < 0: #Can't declare global at runtime...
+    if XDest < 0 or XDest > XMax: #Can't declare global at runtime...
         XDest = GlobalX
-    if YDest < 0:
+    if YDest < 0 or YDest > YMax:
         YDest = GlobalY #can't set = 0 as false because 0 is valid location...
-    if ZDest < 0:
+    if ZDest < 0 or ZDest > ZMax:
         ZDest = GlobalZ #can do 'default' but bah.
     if RDest < 0:
         RDest = GlobalR

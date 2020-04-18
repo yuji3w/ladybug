@@ -14,7 +14,7 @@ import time
 
 def BallTracker(frame, ColorLower = (29, 86, 6), ColorUpper = (64, 255, 255),
                 buffer = 32,counter=0,pts='default',
-                dX = 0, dY = 0, direction = ""):
+                dX = 0, dY = 0, direction = "",Width=640,Height=480):
         
 
         # initialize the list of tracked points, the frame counter,
@@ -25,7 +25,7 @@ def BallTracker(frame, ColorLower = (29, 86, 6), ColorUpper = (64, 255, 255),
 
         # resize the frame, blur it, and convert it to the HSV
         # color space
-        frame = imutils.resize(frame, width=640)
+        frame = imutils.resize(frame, width=Width,height=Height)
         blurred = cv2.GaussianBlur(frame, (11, 11), 0)
         hsv = cv2.cvtColor(blurred, cv2.COLOR_BGR2HSV)
 
