@@ -4,6 +4,7 @@ core by yujie --- 4/4/2020
 
 import cv2
 import numpy as np
+import math
 
 ''' Returns color IMG broken into BLOCK_DIMS[0]xBLOCK_DIMS[1] 
     sub-rectangles as 5-dimensional array of NEW_X, NEW_Y, X,
@@ -124,11 +125,28 @@ def frame_hue_bounded(frame, lower_bound = np.array([20, 100, 100]),
 def overlay(canvas, sub_img, location):
 	# TODO: preprocessing on sub_img so there's no overlap
 	# TODO: make sure that sub_img does not exceed location[1] + xs_len
-	yc_len, xc_len, cchannels = canvas.shape
+	# TODO; figure out how to figure out where the locations are
+	
+	yc_len, xc_len, cchannels = canvas.shape #USE NAMES THAT MAKE SENSE YUJIE
 	ys_len, xs_len, schannels = sub_img.shape
 	canvas[location[0] : location[0] + ys_len, location[1] : location[1] + xs_len] = sub_img
 
 ''' Converts from X and Y coordinates DIMS[0], DIMS[1] 
     to XPIXELS and YPIXELS '''
+#this makes no sense. Do you mean it converts distances (not coordinates)?
 def absolute_to_pixels(dims, pixel_multiplier):
 	return (dims[0]*pixel_multiplier, dims[1] * pixel_multiplier)
+
+
+'''generate blank canvas that's as big as possible scan dimensions.
+  requires the magic "pixels per unit of measurement".
+  should this have a buffer of half the image width? since 'location'
+  is really at the center of the image, not at any of the edges/corners '''
+
+def GenerateCanvas(AbsoluteWidth = 10, AbsoluteHeight = 10, PixelsPerUnit = 100):
+
+  WidthInPixels = int(math.ceil(AbsoluteWidth * PixelsPerUnit / 10.0)) * 10 #round up to nearest 10
+  HeightInPixels = int(math.ceil(AbsoluteHeight * PixelsPerUnit / 10.0)) * 10
+
+  Canvas = np.zeros((WidthInPixels,HeightInPixels,3), np.uint8)
+  return Canvas
