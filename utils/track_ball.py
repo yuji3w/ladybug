@@ -4,9 +4,8 @@
 
 # import the necessary packages
 from collections import deque
-from imutils.video import VideoStream
+from imutils.video import FPS
 import numpy as np
-import argparse
 import cv2
 import imutils
 import time
@@ -124,3 +123,39 @@ def BallTracker(frame, ColorLower = (29, 86, 6), ColorUpper = (64, 255, 255),
         
         # show the frame to our screen and increment the frame counter
         return (frame,x,y,direction,dX,dY,pts,counter)
+
+#core from https://www.pyimagesearch.com/2018/07/30/opencv-object-tracking/
+
+def UpdateBox(frame,tracker,fps, width=640):
+
+    frame = imutils.resize(frame, width) #could put arg here for width. probably not needed
+    (H, W) = frame.shape[:2]
+    
+    # grab the new bounding box coordinates of the object
+    (success, box) = tracker.update(frame)
+
+    # check to see if the tracking was a success
+    if success:
+        (x, y, w, h) = [int(v) for v in box]
+        cv2.rectangle(frame, (x, y), (x + w, y + h), (0, 255, 0), 2)
+        
+
+	# update the FPS counter
+        fps.update()
+        fps.stop()
+
+	# initialize the set of information we'll be displaying on
+	# the frame
+    info = [
+        ("Tracker", "KCF"), #probably should remove tracker cuz hardcoded
+        ("Success", "Yes" if success else "No"),
+        ("FPS", "{:.2f}".format(fps.fps())),
+    ]
+
+    # loop over the info tuples and draw them on our frame
+    for (i, (k, v)) in enumerate(info):
+        text = "{}: {}".format(k, v)
+        cv2.putText(frame, text, (10, H - ((i * 20) + 20)),
+            cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 255), 2)
+
+    return (frame, tracker, fps, success, box if success else 0) #need to pass tracker?

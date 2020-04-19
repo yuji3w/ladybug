@@ -19,10 +19,11 @@ import subprocess
 import cv2
 import threading
 from PIL import Image, ImageTk
+from imutils.video import FPS
 from utils.imagetools import * #tools for manipulating images during scan
 from utils.pickandplace import * #Automated PCB inspection test
 import tsp #traveling salesman module. Requires pandas. Really slow
-import utils.track_ball as ObjectTracker #adapted from greenball tracker
+import utils.track_ball as ObjectTracker 
 import utils.findcolors as findcolors #for object tracking with color
 
 
@@ -342,9 +343,13 @@ def ShowCamera(cap=False,camera_choice=1,TrackTheBug=True,Width=640,Height=480):
     if cap == False: #else pass in an explicit cap
         cap = cv2.VideoCapture(camera_choice) #default 1 if on laptop with webcam
 
+    #tracking variables
+    fps = None
+    BoxTimeout = 0
+    initBB = None
     
     prev_img_name = 'im an image'
-    DefaultName = "space to snap, esc to escape, f toggles track, b resize, v video"
+    DefaultName = "space to snap, esc to escape, f toggles color track and c the color, s draw bounding box, b resize, v video"
     cv2.namedWindow(DefaultName,cv2.WINDOW_NORMAL) #resize
     cv2.resizeWindow(DefaultName, Width,Height) #small better for preview
     
@@ -399,6 +404,18 @@ def ShowCamera(cap=False,camera_choice=1,TrackTheBug=True,Width=640,Height=480):
             print('width and height is now {},{}'.format(Width,Height))
 
             cv2.resizeWindow(DefaultName,Width,Height)
+
+        if k%256 == ord("s"):
+            #initiate track by bounded box
+            tracker = cv2.TrackerKCF_create() 
+            # press ENTER or SPACE after selecting the ROI)
+            initBB = cv2.selectROI(DefaultName, frame, fromCenter=False,
+			showCrosshair=True)
+
+            # start OpenCV object tracker using the supplied bounding box
+            # coordinates, then start the FPS throughput estimator as well
+            tracker.init(frame, initBB)
+            fps = FPS().start()
                 
                 
         elif k%256 == 32:
@@ -417,10 +434,41 @@ def ShowCamera(cap=False,camera_choice=1,TrackTheBug=True,Width=640,Height=480):
             cv2.imwrite(img_name, frame)
             print("{} written!".format(img_name))
             prev_img_name = img_name.lstrip(string.digits) 
+
+        if initBB is not None:
+        #call bounding boxer
+            frame, tracker, fps, success, box = ObjectTracker.UpdateBox(frame,tracker,fps)
+            if not success:
+                BoxTimeout +=1
+                if BoxTimeout > 50: #max attempts, reinitialize everything
+                    initBB = None 
+                    fps = None          
+            
+            else:
+                BoxTimeout = 0
+                (x, y, w, h) = [int(v) for v in box] #x,y 0,0 top left
+                CenterX = (x+(w/2))
+                CenterY = (y+(h/2))
+                #print(CenterX,CenterY)
+                KeepBugInCenter(CenterX,CenterY,Width=Width,Height=Height)
+                #print('found object hooooray')
+                #call motion mover thing
         
-        if TrackTheBug: #ruining my code to add support for this function
-            frame, x, y = KeepBugInCenter(frame,Width=Width,Height=Height,
-            ColorLower = ColorLower, ColorUpper = ColorUpper )
+        
+        if TrackTheBug: #trackthebug by color needs consolidation with box method
+
+            TrackerOutput = ObjectTracker.BallTracker(frame,
+                    ColorLower = ColorLower,
+                    ColorUpper = ColorUpper,
+                    Width=Width, Height=Height) #False if nothing detected 
+
+            if TrackerOutput:
+
+                frame = TrackerOutput[0]
+                x = TrackerOutput[1] #centroid
+                y = TrackerOutput[2]
+
+                KeepBugInCenter(x,y,Width=Width,Height=Height)
 
             #green # ColorLower = (29,86,6), ColorUpper = (64, 255, 255)
             #brown (10, 100, 20),(20, 255, 200)
@@ -435,35 +483,21 @@ def ShowCamera(cap=False,camera_choice=1,TrackTheBug=True,Width=640,Height=480):
         cv2.imshow(DefaultName, frame)
 
     cv2.destroyAllWindows()
+
+
+
     
-def KeepBugInCenter(frame,PixelsPerUnit = 200, Width = 640,
-                    Height=480, thresh = 30,
-                    ColorLower = (29,86,6), ColorUpper = (64, 255, 255)
-                    ):
+def KeepBugInCenter(ObjectX,ObjectY,PixelsPerUnit = 200, Width = 640,
+                    Height=480, thresh = 30, speed = 2000):
     #we want to make X and Y be center of the frame --- width and height/2
     #calls motion accordingly...
     #this should be PID loop ideally 
-
-    TrackerOutput = ObjectTracker.BallTracker(frame,
-                    ColorLower = ColorLower,
-                    ColorUpper = ColorUpper,
-                    Width=Width, Height=Height) #False if nothing detected 
-    
-    
+ 
     GoalX = Width/2
-    GoalY = Height/2
+    GoalY = Height/2    
     
-    if not TrackerOutput: #reinitialize balltracker variables
-
-        return frame, GoalX, GoalY, #goals are just placeholders here
-        
-    
-    frame, x, y = TrackerOutput[0],TrackerOutput[1],TrackerOutput[2]
-    
-    
-    
-    XPixels = (GoalX-x)
-    YPixels = (GoalY-y)
+    XPixels = (GoalX-ObjectX)
+    YPixels = (GoalY-ObjectY)
 
     if abs(XPixels) < thresh:
         XPixels = 0
@@ -478,9 +512,9 @@ def KeepBugInCenter(frame,PixelsPerUnit = 200, Width = 640,
 
     if YMovement or XMovement:
         
-        AllGoTo(XFinal,YFinal,GlobalZ,update=False) #not waiting for update yet
+        AllGoTo(XFinal,YFinal,GlobalZ,update=False, speed=speed) #not waiting for update yet
 
-    return frame, x, y    
+    return XFinal,YFinal
     
 def ZStackKinda(ZCoord, subdiv_dims = (4,4),
                 SkipStackReturnFrames = False,
