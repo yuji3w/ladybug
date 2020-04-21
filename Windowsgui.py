@@ -112,18 +112,25 @@ def SendGCode(GCode,machine='ladybug'):
     #time.sleep(0.02) #this is for potential conflicts of calling gcodes too fast
 
 def EngageSteppers():
-    SendGCode("M84 S3600") #tells it not to turn off motors for S seconds (default 60 grr)
+    SendGCode("M84 S36000") #tells it not to turn off motors for S seconds (default 60 grr)
+    time.sleep(0.05)
     SendGCode("M302 P1") #PREVENTS ERRORS FROM 'cold' EXTRUSION
+    time.sleep(0.05)
     SendGCode("M203 Z50") #lets z go a bit faster
+    time.sleep(0.05)
     SendGCode("M17") #engage steppers
+
+def TurnOnFan(speed=250): #Here's to this mattering possibly
+    gcode = "M106 S" + str(speed)
+    SendGCode(gcode)
 
 def DisengageSteppers():
     SendGCode("M18")
 
-def GetPositions(machine = 'ladybug'):
+def GetPositions(machine = 'ladybug',timeout=1):
     #returns dictionary X,Y,Z and maybe R of actual position at time of request
 
-    sleeptime = 0.02
+    sleeptime = 0.05 #can I calculate things in other threads during this time? 
     
     if machine == 'ladybug': #fix so it doesn't fail at runtime. not proper 4sure
         machine = LadyBug 
@@ -131,15 +138,19 @@ def GetPositions(machine = 'ladybug'):
     previous_buffer = machine.read_all() #clear buffer essentially
 
     SendGCode("M114") #report machine status
+    
     time.sleep(sleeptime)
-    for i in range (2): #communication back and forth not instant, i for failsafe
+    
+    for i in range (timeout): #communication back and forth not instant, i for failsafe
         try:
             dump = machine.read_until().decode('utf-8') #kept in bytes. read_all inconsistent
         
-        except serial.SerialTimeoutException():
+        except serial.SerialTimeoutException(): #other exceptions found here
         
             print('timeout')
             return False
+
+            #print('no dump. communication ERROR')
         
         if 'Count' in dump: #precedes actual position data
     
@@ -154,38 +165,59 @@ def GetPositions(machine = 'ladybug'):
             Z = float(''.join([s for s in Zraw if (s.isdigit() or s == '.')]).strip())
 
             positions = {'X':X,'Y':Y,'Z':Z,'delay':i*sleeptime,'raw':dump,'prev':previous_buffer}
-            return positions
-        else:
-            time.sleep(sleeptime) #and loop back to try again
-    print('communication lag --- check USB cable or port if frequent')    
-    return(False)
 
-def WaitForConfirmMovements(X,Y,Z):
+            return positions
+            
+        
+            
+        time.sleep(sleeptime) #and loop back to try again
+
+    if not dump:
+        
+            return(False)
+
+def WaitForConfirmMovements(X,Y,Z,attempts=50): #50 is several seconds
     #calls get_positions until positions returned is positions desired
+    #if it fails twice that means we're not moving at all.
+    #that or failure to get positions at all means something went wrong. 
     
-    while True:
-            time.sleep(0.05)
-            positions = GetPositions()
-            if positions:
-    
-                if (math.isclose(X,positions['X'],abs_tol=0.02) #microns getting lost
-                    and math.isclose(Y,positions['Y'],abs_tol=0.02)
-                    and math.isclose(Z,positions['Z'],abs_tol=0.02)
-                    ):
+    for j in range(attempts):
+            #time.sleep(0.05) #gonna try just giving the delay to getpositions
+
+        positions = GetPositions()
+
+            
+        if positions:
+            
+            if (math.isclose(X,positions['X'],abs_tol=0.04) #microns getting lost
+                and math.isclose(Y,positions['Y'],abs_tol=0.04)
+                and math.isclose(Z,positions['Z'],abs_tol=0.04)
+                ):
                 
-                    return (positions) #we have arrived
-                else:
-                    continue
+                return positions #we have arrived
+            else:
+                continue
+            
+    #exceeded allotted attempts
+    print('exceeded allotted {} attempts')
+    return False
 
 def RestartSerial(port=8, BAUD = 115200,timeout=timeout):
+
+    global LadyBug #below functions expect this global, whoops
 
     if (not isinstance(port,int)) or (not isinstance(BAUD,int)):
          print ('please specify CNC port and BAUD rate (example: 6 , 115200)')
 		
     try:
-        CloseSerial() #will pass if no port by ladybug name open
+        CloseSerial() #will pass if no port by ladybug name open        
         
         LadyBug = serial.Serial('COM' + str(port), BAUD,timeout=timeout)
+        time.sleep(1.5)
+        EngageSteppers()
+        time.sleep(1.5)
+        TurnOnFan()
+        time.sleep(1.5)
         return LadyBug #name of controllable CNC machine
     
     except Exception: #SerialException is proper but not working
@@ -364,10 +396,27 @@ def ShowCamera(cap=False,camera_choice=1,TrackTheBug=True,Width=640,Height=480):
 
     while True:
         ret, frame = cap.read()
-    
+        np.resize(frame,(Width,Height,3)) #just force it    
         if not ret:
             break
         k = cv2.waitKey(1)
+        
+        if k%256 == 32: #this and video capture now before frame modification
+            # SPACE pressed take picture
+            img_name = "capture\\" + MakeNameFromPositions(GlobalX,GlobalY,GlobalZ,GlobalR,'.jpg') 
+            if img_name == prev_img_name:
+                counter+=1
+                img_name = str(counter) + img_name
+            #this turned out to be weirdly hard to make it add number only if
+            #picture at location has been taken before.
+            #and this will still overwrite if you leave and come back
+            
+            elif img_name != prev_img_name: 
+                counter = 0            
+
+            cv2.imwrite(img_name, frame)
+            print("{} written!".format(img_name))
+            prev_img_name = img_name.lstrip(string.digits) 
 
         if k%256 == 27:
             # ESC pressed
@@ -386,10 +435,14 @@ def ShowCamera(cap=False,camera_choice=1,TrackTheBug=True,Width=640,Height=480):
                 del out
             except NameError: 
                 #VideoName = time.asctime().replace(" ","") + '.avi'
-                VideoName = "capture\\" + MakeNameFromPositions(GlobalX,GlobalY,GlobalZ,GlobalR,'.avi')
-                out = cv2.VideoWriter(VideoName,cv2.VideoWriter_fourcc('M','J','P','G'), 25, (Width,Height))
+                VideoName = "capture\\" + MakeNameFromPositions(GlobalX,GlobalY,GlobalZ,GlobalR,'.mp4')
+                out = cv2.VideoWriter(VideoName,cv2.VideoWriter_fourcc('H','2','6','4'), 20, shape(frame)[1::-1])
                 print('Starting video capture')
         
+        try:
+            out.write(frame)
+        except NameError:
+            pass
         
         if k%256 == 102:
             #f pressed. Toggle bug tracking
@@ -417,24 +470,6 @@ def ShowCamera(cap=False,camera_choice=1,TrackTheBug=True,Width=640,Height=480):
             tracker.init(frame, initBB)
             fps = FPS().start()
                 
-                
-        elif k%256 == 32:
-            # SPACE pressed take picture
-            img_name = "capture\\" + MakeNameFromPositions(GlobalX,GlobalY,GlobalZ,GlobalR,'.jpg') 
-            if img_name == prev_img_name:
-                counter+=1
-                img_name = str(counter) + img_name
-            #this turned out to be weirdly hard to make it add number only if
-            #picture at location has been taken before.
-            #and this will still overwrite if you leave and come back
-            
-            elif img_name != prev_img_name: 
-                counter = 0            
-
-            cv2.imwrite(img_name, frame)
-            print("{} written!".format(img_name))
-            prev_img_name = img_name.lstrip(string.digits) 
-
         if initBB is not None:
         #call bounding boxer
             frame, tracker, fps, success, box = ObjectTracker.UpdateBox(frame,tracker,fps)
@@ -475,11 +510,6 @@ def ShowCamera(cap=False,camera_choice=1,TrackTheBug=True,Width=640,Height=480):
             #black (0, 0, 0), (360, 100, 20) #bad
             #experimental (124,40,0) , (168,103,255)
 
-        try:
-            out.write(frame)
-        except NameError:
-            pass
-        
         cv2.imshow(DefaultName, frame)
 
     cv2.destroyAllWindows()
@@ -622,9 +652,9 @@ DefaultScan = {'FileType':".jpg",'Width':1280,'Height':960
                   "AutoFocus":False, "Z Heights": [],
                'ScanLocations':{'X':[],'Y':[],'Z':[],'R':[]},
                "Save Location":"", "Start Time":0, "PointInScan": 0,
-               "Failures":[], "Vibration Control":0.12,
-               'Camera':False}
-           
+               "Failures":[], "VibrationControl":0.2,
+               'Camera':False, "ScanRates": []}
+               
 def GridScan(ScanConditions): # DefaultScan dictionary available for modifying
 
     if not ScanConditions['Restarted Scan']:
@@ -640,12 +670,13 @@ def GridScan(ScanConditions): # DefaultScan dictionary available for modifying
     Height = ScanConditions['Height']
     FileType = ScanConditions['FileType']
     Failures = ScanConditions['Failures']
+    ScanRates = ScanConditions['ScanRates'] #how fast takes pictures periodically
     AutoFocus = ScanConditions['AutoFocus'] #true or false
     PotentialZ = ScanConditions['Z Heights']
     PointInScan = ScanConditions['PointInScan']
     ScanLocations = ScanConditions['ScanLocations']
     CameraSettings = ScanConditions['CameraSettings']
-    VibrationControl = ScanConditions['Vibration Control']
+    VibrationControl = ScanConditions['VibrationControl']
             
     XCoord = ScanLocations['X']
     YCoord = ScanLocations['Y']
@@ -683,22 +714,27 @@ def GridScan(ScanConditions): # DefaultScan dictionary available for modifying
         RGoTo(R)
         
         #gcode confirmation movement block
+        #hacky restart fix goes here
+        SuccessfulWait = WaitForConfirmMovements(X,Y,(Z if not AutoFocus else GlobalZ))
 
-        WaitForConfirmMovements(X,Y,(Z if not AutoFocus else GlobalZ))
-        '''while True:
-            time.sleep(0.1)
-            positions = GetPositions()
-            if positions:
-    
-                if (X == positions['X']
-                    and Y == positions['Y']
-                    and (Z == positions['Z'] or AutoFocus)
-                    ):
-                
-                    break #go ahead and take a picture
-                else:
-                    continue
-        '''
+        if not SuccessfulWait:
+            global LadyBug
+            LadyBug = RestartSerial()
+            Home()
+            time.sleep(4)
+            XGoTo(X)
+            YGoTo(Y)
+            if not AutoFocus: #I don't like this :(
+                ZGoTo(Z)
+            RGoTo(R)
+            time.sleep(3)
+            
+            Failures.append(i) #point in scan
+            print('restarted at point {} grr'.format(i))
+            
+            SuccessfulWait = WaitForConfirmMovements(X,Y,(Z if not AutoFocus else GlobalZ),attempts=50)
+            #twice in a row would suck            
+
         #Picture taking block
         
         for i in range(3): #catches some failed pictures
@@ -727,13 +763,17 @@ def GridScan(ScanConditions): # DefaultScan dictionary available for modifying
                 SavePicture(folder + "/" + name,frame)
                             
             except Exception: #Filesaving errors go here
-                print('partial failure for picture {}'.format(name))
+                print('partial (not total) failure for picture {}'.format(name))
                 
 
             else: #successful pic
                 PointInScan +=1
-                if PointInScan % 50 == 0: #every 100 pics
-                    print("{} of {} pics woohoo".format(PointInScan,len(XCoord)))
+                if PointInScan % 100 == 0: #every 100 pics  
+                    ScanRates.append(time.time())
+                    
+                    if len(ScanRates)>1:
+                        tttt = ScanRates[-1]-ScanRates[-2] #time taken this time
+                        print("{} of {} pics took {} seconds".format(PointInScan,len(XCoord),tttt))
 
                 break                    
 
@@ -742,7 +782,7 @@ def GridScan(ScanConditions): # DefaultScan dictionary available for modifying
             Failures.append([X,Y,Z,R])
             
     #end of scan, retaking failed pictures goes here
-    print ('Failures: {}'.format(Failures))
+    print ('Failures: {}'.format(Failures)) #ints for serial and locations for pictures
     print ('scan completed successfully! Time taken: {}'.format(time.strftime("%H:%M:%S", time.gmtime(time.time() - start_time))))
 
     #go back to beginning simplifies testing, but could also set a park position
@@ -1198,8 +1238,6 @@ try:
     frame = TakePicture(cap) #for testing
     
     LadyBug = RestartSerial() #initiate GCODE based machine
-    time.sleep(3)
-    EngageSteppers() #prevents default timeout from happening
     StartThreadedCamera()
     
     scan_file = open('/home/pi/Desktop/ladybug/scandata.pkl', 'rb')
