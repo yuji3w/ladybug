@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+    #!/usr/bin/env python3
 
 #MARCH 16 2020! Convert beefy gui to try and run a scan with gcodes and like physically clicking buttons on the dinolite program
 
@@ -60,6 +60,11 @@ RMax = 33.33 #not great but mm per rotation
 
 BigXY = 5 #motion in mm for buttons, default, could be user reset
 LittleXY = 0.5
+LittleZ = 0.1
+
+XSpeed = 2000 #standard max speeds for movement
+YSpeed = 2000
+ZSpeed = 1000
 
 BigZ = 2
 LittleZ = 0.1 #maybe even too big but can be played with
@@ -70,6 +75,16 @@ win = tk.Tk()
 myFont = tk.font.Font(family='Helvetica', size=12, weight='bold')
 myBigFont = tk.font.Font(family='Helvetica', size=20,weight='bold')
 font.families()
+
+def CalibratePixels(cap,method='manual'):
+    #function to convert millimeters into pixels
+    #could be made automatic
+    
+    if method == 'manual':
+        frame = TakePicture(cap)
+        
+
+    return PixelsPerMM
 
 def ConvertStepsToMM (XSteps,YSteps,ZSteps,ESteps, XStepsPerMM=80,YStepsPerMM=80,ZStepsPerMM=400,EStepsPerMM = 33.33):
     XMM = round(XSteps/XStepsPerMM,4)
@@ -116,11 +131,11 @@ def EngageSteppers():
     time.sleep(0.05)
     SendGCode("M302 P1") #PREVENTS ERRORS FROM 'cold' EXTRUSION
     time.sleep(0.05)
-    SendGCode("M203 Z50") #lets z go a bit faster
-    time.sleep(0.05)
+    #SendGCode("M203 Z50") #lets z go a bit faster
+    #time.sleep(0.05) #disabled for NANO. uncomment if Z too slow
     SendGCode("M17") #engage steppers
 
-def TurnOnFan(speed=250): #Here's to this mattering possibly
+def TurnOnFan(speed=250): #up to 250, adjust if shrieking
     gcode = "M106 S" + str(speed)
     SendGCode(gcode)
 
@@ -129,7 +144,10 @@ def DisengageSteppers():
 
 def GetPositions(machine = 'ladybug',timeout=1):
     #returns dictionary X,Y,Z and maybe R of actual position at time of request
-
+    #this is the most likely function to be culprit if movement works but scan doesn't
+    #Originally meant for normal cartesian marlin
+    
+    
     sleeptime = 0.05 #can I calculate things in other threads during this time? 
     
     if machine == 'ladybug': #fix so it doesn't fail at runtime. not proper 4sure
@@ -158,7 +176,7 @@ def GetPositions(machine = 'ladybug',timeout=1):
             
             Xraw = remainder[remainder.find('X:'):remainder.find('Y')]
             Yraw = remainder[remainder.find('Y:'):remainder.find('Z')]
-            Zraw = remainder[remainder.find('Z:'):]
+            Zraw = remainder[remainder.find('Z:'):(remainder.find('E') if 'E' in remainder else None)] #E sometimes in remainderadded for Nano
 
             X = float(''.join([s for s in Xraw if (s.isdigit() or s == '.')]).strip())
             Y = float(''.join([s for s in Yraw if (s.isdigit() or s == '.')]).strip())
@@ -207,23 +225,36 @@ def RestartSerial(port=8, BAUD = 115200,timeout=timeout):
     global LadyBug #below functions expect this global, whoops
 
     if (not isinstance(port,int)) or (not isinstance(BAUD,int)):
-         print ('please specify CNC port and BAUD rate (example: 6 , 115200)')
-		
-    try:
-        CloseSerial() #will pass if no port by ladybug name open        
-        
-        LadyBug = serial.Serial('COM' + str(port), BAUD,timeout=timeout)
-        time.sleep(1.5)
-        EngageSteppers()
-        time.sleep(1.5)
-        TurnOnFan()
-        time.sleep(1.5)
-        return LadyBug #name of controllable CNC machine
-    
-    except Exception: #SerialException is proper but not working
-        
-        print ('unable to connect to port {}, sacrifice a goat or whatever to fix it'.format(port))
+         print ('please specify CNC port and/or BAUD rate (example: 6 , 115200)')
 
+    while True:
+
+        try:
+            CloseSerial() #will pass if no port by ladybug name open
+
+            LadyBug = serial.Serial('COM' + str(port), BAUD,timeout=timeout)
+            time.sleep(1.5)
+            EngageSteppers()
+            time.sleep(1.5)
+            #TurnOnFan()
+            #time.sleep(1.5)
+            return LadyBug #name of controllable CNC machine
+
+        except Exception: #SerialException is proper but not working
+
+            print ('unable to connect to port {}, BAUD {}, sacrifice a goat or whatever to fix it'.format(port,BAUD))
+            inputstr = input('please specify CNC port and/or BAUD rate (example: 6 , 115200) to try?')
+            inputs = inputstr.split(',')
+
+            if len(inputs) == 2: #There's got to be a better way!
+                port = inputs[0]
+                BAUD = inputs[1]
+
+            elif len(inputs) == 1 and inputs[0].isdigit():
+                port = inputs[0]
+            else:
+                print('Failed to connect.')
+                return None
 
 def CloseSerial(machine = 'ladybug'):
     try:
@@ -232,6 +263,7 @@ def CloseSerial(machine = 'ladybug'):
         machine.close()
     except NameError:
         pass
+                
     
 
 def CalculateOverlap(XSteps,YSteps,PixelsPerStep=1,XWidth=640,YHeight=480):
@@ -336,7 +368,7 @@ def DefineScan(XMin, XMax, YMin, YMax, ZMin, ZMax, RMin, RMax, XSteps=100, YStep
 
 
 #all assumes cv2 here
-def StartCamera(camera = 1, Width = 1280, Height = 960):
+def StartCamera(camera = 1, Width = 640, Height = 480):
 
     cap = cv2.VideoCapture(camera)
     cap.set(3,Width)
@@ -367,7 +399,34 @@ def CalculateBlur(frame):
 def ShowPicture(frame):
     cv2.imshow('X:' + str(GlobalX) + ' Y:' + str(GlobalY) + ' Z:' + str(GlobalZ),frame)
 
-def ShowCamera(cap=False,camera_choice=1,TrackTheBug=True,Width=640,Height=480):
+def MoveFromClick(event,x,y,flags,param):
+    #Moves to put clicked on area in center
+
+    if param:
+        PixelsPerUnit = param(0)
+        
+    else:
+        PixelsPerUnit = 50 #number of pixels per mill
+    '''
+    if event == cv2.EVENT_LBUTTONDBLCLK:
+        #print('X,Y are {},{}'.format(x,y))
+        #print(GlobalX,GlobalY)
+        KeepBugInCenter(x,y)
+        
+    elif event == cv2.EVENT_RBUTTONDOWN:
+        KeepBugInCenter(abs(640-x),abs(480-y))
+    
+    elif event == cv2.EVENT_RBUTTONUP:
+        KeepBugInCenter(abs(640-x),abs(480-y))
+    '''     
+
+    
+    if event == cv2.EVENT_FLAG_LBUTTON:
+        print('movefromclickactivated')    
+        KeepBugInCenter(x,y,PixelsPerUnit=PixelsPerUnit)
+
+        
+def ShowCamera(cap=False,camera_choice=1,TrackTheBug=True,Width=1280,Height=960):
     #best to call this with threading so you can use other gui controls 
     #though really they should be integrated together.
     #or some other third smaller solution
@@ -385,6 +444,7 @@ def ShowCamera(cap=False,camera_choice=1,TrackTheBug=True,Width=640,Height=480):
     cv2.namedWindow(DefaultName,cv2.WINDOW_NORMAL) #resize
     cv2.resizeWindow(DefaultName, Width,Height) #small better for preview
     
+    
     #ColorLower, ColorUpper = (64,255,255) , (29,86,6) #green
     
     ColorLowers = [(64,255,255),(10,100,20)] #note "s". cycle through to get color
@@ -399,6 +459,7 @@ def ShowCamera(cap=False,camera_choice=1,TrackTheBug=True,Width=640,Height=480):
         np.resize(frame,(Width,Height,3)) #just force it    
         if not ret:
             break
+        cv2.setMouseCallback(DefaultName,MoveFromClick)#possibly bad looped
         k = cv2.waitKey(1)
         
         if k%256 == 32: #this and video capture now before frame modification
@@ -418,10 +479,25 @@ def ShowCamera(cap=False,camera_choice=1,TrackTheBug=True,Width=640,Height=480):
             print("{} written!".format(img_name))
             prev_img_name = img_name.lstrip(string.digits) 
 
+        
         if k%256 == 27:
             # ESC pressed
             print("Escape hit, closing...")
             break
+
+        if k%256 == ord('j'): #can't figure out arrow keys. ijkl for movement
+            AllGoTo(GlobalX-LittleXY,GlobalY,GlobalZ,update=False, speed=XSpeed) #thread problems. dont update position
+        if k%256 == ord('l'):
+            AllGoTo(GlobalX+LittleXY,GlobalY,GlobalZ,update=False, speed=XSpeed)
+        if k%256 == ord('i'):
+            AllGoTo(GlobalX,GlobalY+LittleXY,GlobalZ,update=False, speed=YSpeed)
+        if k%256 == ord('k'):
+            AllGoTo(GlobalX,GlobalY-LittleXY,GlobalZ,update=False, speed=YSpeed)
+        if k%256 == ord('-'):
+            AllGoTo(GlobalX,GlobalY,GlobalZ-LittleZ,update=False, speed=ZSpeed)
+        if k%256 == ord('='): #- and + but + is shifted
+            AllGoTo(GlobalX,GlobalY,GlobalZ+LittleZ,update=False, speed=ZSpeed)
+        
         if k%256 == ord('c'): #toggle color choice
             ColorsIndex +=1
             if ColorsIndex == NumberOfColors:
@@ -457,13 +533,13 @@ def ShowCamera(cap=False,camera_choice=1,TrackTheBug=True,Width=640,Height=480):
             print('width and height is now {},{}'.format(Width,Height))
 
             cv2.resizeWindow(DefaultName,Width,Height)
-
+        
         if k%256 == ord("s"):
             #initiate track by bounded box
             tracker = cv2.TrackerKCF_create() 
             # press ENTER or SPACE after selecting the ROI)
             initBB = cv2.selectROI(DefaultName, frame, fromCenter=False,
-			showCrosshair=True)
+            showCrosshair=True)
 
             # start OpenCV object tracker using the supplied bounding box
             # coordinates, then start the FPS throughput estimator as well
@@ -598,14 +674,16 @@ def FindZFocus(ZCoord,GoToFocus = True, camera='default'):
             else:
                 time.sleep(0.05)
         time.sleep(0.1) #vibration control
+
         frame = TakePicture(camera)
         blur = CalculateBlur(frame)
         frames.append(frame)
         blurs.append(blur)
-
-
+    
+    
     ZFocus = ZCoord[blurs.index(max(blurs))]
     BestFrame = frames[blurs.index(max(blurs))]
+    
     if GoToFocus:
         ZGoTo(ZFocus)
         
@@ -685,7 +763,7 @@ def GridScan(ScanConditions): # DefaultScan dictionary available for modifying
 
     if not cap: # already passed a camera object in
         
-        cap = StartCamera()
+        cap = StartCamera(Width=Width,Height=Height)
     
     #DO ANY ADJUSTING OF CAMERA CONDITIONS HERE AFTER STARTING CAMERA
     #Note: manual exposure settings are not absolute: you MUST move the camera
@@ -712,6 +790,11 @@ def GridScan(ScanConditions): # DefaultScan dictionary available for modifying
         if not AutoFocus: #I don't like this :(
             ZGoTo(Z)
         RGoTo(R)
+
+        #needs to have a mode that prioritizes Z movements for stacking
+        #total autofocus rework to return sorted Zs in order instead of just one
+        #and then you can pick X number to keep etc.
+
         
         #gcode confirmation movement block
         #hacky restart fix goes here
@@ -791,6 +874,8 @@ def GridScan(ScanConditions): # DefaultScan dictionary available for modifying
     if not AutoFocus: #Crash number 3
         ZGoTo(ZCoord[0])
     RGoTo(RCoord[0])
+
+    CloseCamera(cap) #uncomment in unusual circumstances
 
 def XGoTo(XDest,speed = 10000):
     #everything being switched to milimeters at this point, sorry. 
@@ -1104,14 +1189,14 @@ def MoveTDownSmall():
     MoveT(TBACKWARD, 8, SLOW)
     print("You tilted something down a bit!")
 
-def StartThreadedCamera(FollowBool=False):
+def StartThreadedCamera(FollowBool=False,Width=1280,Height=960):
     
     global cap #can I do this so that cap stays if it's made this way
 
     try:
         bool(cap) #variable even exists?
     except NameError:
-        cap = StartCamera()
+        cap = StartCamera(Width=Width,Height=Height)
 
     x = threading.Thread(target=ShowCamera, args=([cap,1,FollowBool]))
     #x.setDaemon(True) #trying to fix main thread is not in main loop
@@ -1234,7 +1319,7 @@ SecondaryBottomFrame.pack(side=tk.TOP)
 
 
 try:
-    cap = StartCamera()
+    cap = StartCamera(Width=640,Height=480)
     frame = TakePicture(cap) #for testing
     
     LadyBug = RestartSerial() #initiate GCODE based machine
