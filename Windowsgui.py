@@ -113,7 +113,18 @@ def GenerateCode(X,Y,Z,E, speed = 2000):
     
     return line
 
+def SaveGCode(positions, filename = 'default'):
+    #for use with a gcode viewer like ncviewer.com
 
+    if filename == 'default':
+        filename = 'GCodes.gx'
+
+    with open (filename, 'w') as GCodeFile:
+        for i in range(len(positions['X'])):
+            line = GenerateCode(positions['X'][i],positions['Y'][i],positions['Z'][i],positions['R'][i])
+            GCodeFile.write(line+"\n")
+        GCodeFile.close()
+    print('GCodes written to {}'.format(filename))
 def SendGCode(GCode,machine='ladybug'):
 
     if machine == 'ladybug':
@@ -131,7 +142,7 @@ def EngageSteppers():
     time.sleep(0.05)
     SendGCode("M302 P1") #PREVENTS ERRORS FROM 'cold' EXTRUSION
     time.sleep(0.05)
-    #SendGCode("M203 Z50") #lets z go a bit faster
+    #SendGCode("M203 Z5") #lets z go a bit faster. disabled if using weak nano motor
     #time.sleep(0.05) #disabled for NANO. uncomment if Z too slow
     SendGCode("M17") #engage steppers
 
@@ -141,6 +152,8 @@ def TurnOnFan(speed=250): #up to 250, adjust if shrieking
 
 def DisengageSteppers():
     SendGCode("M18")
+
+
 
 def GetPositions(machine = 'ladybug',timeout=1):
     #returns dictionary X,Y,Z and maybe R of actual position at time of request
@@ -194,7 +207,8 @@ def GetPositions(machine = 'ladybug',timeout=1):
         
             return(False)
 
-def WaitForConfirmMovements(X,Y,Z,attempts=50): #50 is several seconds
+def WaitForConfirmMovements(X,Y,Z,attempts=150): #50 is several seconds
+    #should make it based around predicted amount of time; fails in unusual slow scans 
     #calls get_positions until positions returned is positions desired
     #if it fails twice that means we're not moving at all.
     #that or failure to get positions at all means something went wrong. 
@@ -365,7 +379,23 @@ def DefineScan(XMin, XMax, YMin, YMax, ZMin, ZMax, RMin, RMax, XSteps=100, YStep
     
     return(ScanLocations)
 
+def RotateScan(ScanLocations, degrees = 30):
+    #function to rotate a 3D array around a specified axis (currently Y). Ideally, around arb point in space.  
+    #X Location minus offset becomes new hypotenuse after rotating.
+    #(sin(degrees) * X) + Z gives new Z .
+    #cos(degrees)* X gives new X. Right? Y should be unchanged.
 
+    XLocations,ZLocations = ScanLocations['X'],ScanLocations['Z']
+    sinof = sin(np.deg2rad(degrees))
+    cosof = cos(np.deg2rad(degrees))
+    XOffset = min(XLocations) #not fair to assume it is zeroth position
+
+    ZLocations = [round((x-XOffset)*sinof + z,2) for x, z in zip(XLocations, ZLocations)]
+    XLocations = [round(((i - XOffset) * cosof)+XOffset,2) for i in XLocations]
+
+    ScanLocations['X'] = XLocations
+    ScanLocations['Z'] = ZLocations
+    return (ScanLocations)
 
 #all assumes cv2 here
 def StartCamera(camera = 1, Width = 640, Height = 480):
@@ -401,25 +431,13 @@ def ShowPicture(frame):
 
 def MoveFromClick(event,x,y,flags,param):
     #Moves to put clicked on area in center
-
+    #right now more annoying than helpful
+    
     if param:
         PixelsPerUnit = param(0)
         
     else:
         PixelsPerUnit = 50 #number of pixels per mill
-    '''
-    if event == cv2.EVENT_LBUTTONDBLCLK:
-        #print('X,Y are {},{}'.format(x,y))
-        #print(GlobalX,GlobalY)
-        KeepBugInCenter(x,y)
-        
-    elif event == cv2.EVENT_RBUTTONDOWN:
-        KeepBugInCenter(abs(640-x),abs(480-y))
-    
-    elif event == cv2.EVENT_RBUTTONUP:
-        KeepBugInCenter(abs(640-x),abs(480-y))
-    '''     
-
     
     if event == cv2.EVENT_FLAG_LBUTTON:
         print('movefromclickactivated')    
@@ -875,7 +893,7 @@ def GridScan(ScanConditions): # DefaultScan dictionary available for modifying
         ZGoTo(ZCoord[0])
     RGoTo(RCoord[0])
 
-    CloseCamera(cap) #uncomment in unusual circumstances
+    CloseCamera(cap) #uncomment if things are strange here
 
 def XGoTo(XDest,speed = 10000):
     #everything being switched to milimeters at this point, sorry. 
