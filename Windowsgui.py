@@ -207,17 +207,21 @@ def GetPositions(machine = 'ladybug',timeout=1):
         
             return(False)
 
-def WaitForConfirmMovements(X,Y,Z,attempts=150): #50 is several seconds
+def WaitForConfirmMovements(X,Y,Z,attempts=50): #50 is several seconds
     #should make it based around predicted amount of time; fails in unusual slow scans 
     #calls get_positions until positions returned is positions desired
     #if it fails twice that means we're not moving at all.
     #that or failure to get positions at all means something went wrong. 
+
+
+    PositionsList = [] #for debugging why things aren't moving at all
     
     for j in range(attempts):
             #time.sleep(0.05) #gonna try just giving the delay to getpositions
 
         positions = GetPositions()
-
+        
+        PositionsList.append(positions)
             
         if positions:
             
@@ -228,10 +232,16 @@ def WaitForConfirmMovements(X,Y,Z,attempts=150): #50 is several seconds
                 
                 return positions #we have arrived
             else:
+    
+                if j > 0 and PositionsList[j-1] == PositionsList[j]:
+                    print('Printer not moving, but not at destination? check inputs')
+                    
+                    return False # Different failure condition than unable to communicate. Bad inputs
+                
                 continue
             
     #exceeded allotted attempts
-    print('exceeded allotted {} attempts')
+    print('exceeded allotted {} attempts. USB disconnect?'.format(attempts))
     return False
 
 def RestartSerial(port=8, BAUD = 115200,timeout=timeout):
@@ -429,6 +439,7 @@ def CalculateBlur(frame):
 def ShowPicture(frame):
     cv2.imshow('X:' + str(GlobalX) + ' Y:' + str(GlobalY) + ' Z:' + str(GlobalZ),frame)
 
+'''
 def MoveFromClick(event,x,y,flags,param):
     #Moves to put clicked on area in center
     #right now more annoying than helpful
@@ -443,7 +454,7 @@ def MoveFromClick(event,x,y,flags,param):
         print('movefromclickactivated')    
         KeepBugInCenter(x,y,PixelsPerUnit=PixelsPerUnit)
 
-        
+'''     
 def ShowCamera(cap=False,camera_choice=1,TrackTheBug=True,Width=1280,Height=960):
     #best to call this with threading so you can use other gui controls 
     #though really they should be integrated together.
@@ -477,7 +488,7 @@ def ShowCamera(cap=False,camera_choice=1,TrackTheBug=True,Width=1280,Height=960)
         np.resize(frame,(Width,Height,3)) #just force it    
         if not ret:
             break
-        cv2.setMouseCallback(DefaultName,MoveFromClick)#possibly bad looped
+        #cv2.setMouseCallback(DefaultName,MoveFromClick)#possibly bad looped
         k = cv2.waitKey(1)
         
         if k%256 == 32: #this and video capture now before frame modification
@@ -641,7 +652,6 @@ def KeepBugInCenter(ObjectX,ObjectY,PixelsPerUnit = 200, Width = 640,
     return XFinal,YFinal
     
 def ZStackKinda(ZCoord, subdiv_dims = (4,4),
-                SkipStackReturnFrames = False,
                 camera='default'):
     """takes pictures at ZCoord and then can call max_pool_subdivided_images
     with desired chunking amount and finally returns fakestacked image"""
@@ -657,22 +667,68 @@ def ZStackKinda(ZCoord, subdiv_dims = (4,4),
         ZGoTo(Z)
         while True:
             positions = GetPositions()
-            if positions['Z'] == Z: #我们到了
+            if positions and positions['Z'] == Z: #我们到了
                 break
             else:
                 time.sleep(0.05)
         time.sleep(0.05) #vibration control
         frame = TakePicture(camera)
         frames.append(frame)
-
-    if SkipStackReturnFrames: #I might just use this for quick Z pics
-        return frames
     
     Stacked = max_pool_subdivided_images(frames, subdiv_dims)
 
-    return Stacked
+    return Stacked,frames
 
+def GenerateZ(LowZ,HighZ,Precision):
+    #I used this more than once so into a function it goes
+    
+    ZHeights = []
+    
+    while LowZ <= HighZ:
+        ZHeights.append(LowZ)
+        LowZ = round(LowZ+Precision,2)
 
+    return(ZHeights)
+
+def CallibratePlate(CoordinatePoints = [(25,60),(90,125),(105,30),(62,75)],
+                    LowPoint = 3,
+                    HighPoint = 5,
+                    Precision = 0.1,
+                    ShowImage = False):
+
+    '''a 3 or whatever point leveling system that just reports the point of
+    max focus at coordinate points of interest (usually 3 thumbscrews).
+    Only approximately accurate to within a camera's depth of field'''
+
+    #extra corner points (10,10),(120,10),(120,140),(10,140)
+    
+    ZHeights=GenerateZ(LowPoint,HighPoint,Precision)
+ 
+    print('ZHeights to check are {}'.format(ZHeights))
+    
+    Focuses = []
+    
+    for count, point  in enumerate(CoordinatePoints):
+        XPoint = point[0]
+        YPoint = point[1]
+        
+        XGoTo(XPoint)
+        YGoTo(YPoint)
+        time.sleep(2)
+        WaitForConfirmMovements(XPoint,YPoint,GlobalX) #adds margin on top of sleep
+
+        Focus, FocusImage = FindZFocus(ZHeights,GoToFocus=False) 
+        Focuses.append(Focus)
+        
+        print('Focus for Point {} (X:{},Y{}) at Z Height = {}'.format(
+            count,XPoint,YPoint,Focus))
+        
+        if ShowImage:
+              ShowPicture(FocusImage)
+    print('{} point check done okay'.format(count+1))
+    
+    return(Focuses)
+    
 
 def FindZFocus(ZCoord,GoToFocus = True, camera='default'):
     if camera == 'default':
@@ -687,7 +743,8 @@ def FindZFocus(ZCoord,GoToFocus = True, camera='default'):
         ZGoTo(Z)
         while True:
             positions = GetPositions()
-            if positions['Z'] == Z: #我们到了
+            
+            if positions and positions['Z'] == Z: #我们到了
                 break
             else:
                 time.sleep(0.05)
