@@ -99,13 +99,17 @@ if __name__ == '__main__':
     parser.add_argument('-e', '--extension', required=False,
                         help='file extension without .')
     parser.add_argument('-t', '--acceptable blur', required=False,
-                        help='default 200, higher numbers more strict')
+                        help='default 3, higher numbers more strict')
     args = vars(parser.parse_args())
+    if not args['acceptable blur']:
+        blur = 3
+    else:
+        blur = int(args['acceptable blur'])
     if args['extension']:
         extension = '.' + args['extension']
-        main(args['input'], int(args['acceptable blur']),
+        main(args['input'], blur,
              extension=extension)
     else:
-        main(args['input'], int(args['acceptable blur']))
+        main(args['input'], blur)
 
 			
