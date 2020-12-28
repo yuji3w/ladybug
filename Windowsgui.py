@@ -27,8 +27,22 @@ import utils.track_ball as ObjectTracker
 import utils.findcolors as findcolors #for object tracking with color
 
 
+#dictionary passed into gridscan. At minimum must change
+#scanlocations! Can be made with definescan
+
+DefaultScan = {'FileType':".jpg",'Width':1280,'Height':960
+                  ,'CameraSettings': [],'Restarted Scan':False,
+                  "AutoFocus":False, "Z Heights": [],
+               'ScanLocations':{'X':[],'Y':[],'Z':[],'R':[]},
+               "Save Location":"", "Start Time":0, "PointInScan": 0,
+               "Failures":[], "VibrationControl":0.2,
+               'Camera':False, "ScanRates": []}
+
+
 #Distances from home position in steps for each motor.
 #Starts at "0" so if you don't have any switches just move them there before running the program.
+
+
 
 GlobalX = 0 #left and right (on finder)
 GlobalY = 0 #towards and away from you (on finder)
@@ -152,8 +166,6 @@ def TurnOnFan(speed=250): #up to 250, adjust if shrieking
 
 def DisengageSteppers():
     SendGCode("M18")
-
-
 
 def GetPositions(machine = 'ladybug',timeout=1):
     #returns dictionary X,Y,Z and maybe R of actual position at time of request
@@ -280,6 +292,20 @@ def RestartSerial(port=8, BAUD = 115200,timeout=timeout):
                 print('Failed to connect.')
                 return None
 
+def FocusDemo(cap):
+    #Tinyscopecap is first camera with built in autofocus
+    #turns out it's really easy to alter with opencv
+    #this is just so I don't forget the commands
+
+    cap.set(cv2.CAP_PROP_AUTOFOCUS,0)
+    
+    for i in range (5):
+        for i in range(0,255,5):
+            cap.set(cv2.CAP_PROP_FOCUS,i)
+        for i in range(255,0,-5):
+            cap.set(cv2.CAP_PROP_FOCUS,i)
+
+
 def CloseSerial(machine = 'ladybug'):
     try:
         if machine == 'ladybug':
@@ -287,26 +313,77 @@ def CloseSerial(machine = 'ladybug'):
         machine.close()
     except NameError:
         pass
+
+
+def FoundCoin(pic,threshold = 150):
+    #magically determines if a picture contains a coin
+    #coins are shiny, right? Have more color than dark surface?
+    
+    if pic[0].mean() + pic[1].mean() + pic[2].mean() > threshold:
+        return True
+    #more magic needed for robustness
+
+
+def AutoCoin(cap, coins=1,
+             SearchXMin = 10, SearchXMax = 100,
+             SearchYMin=10, SearchYMax=100,
+             SearchZMin = 0,SearchZMax = 5,
+             FOVLOW = 1, FocusHeights = 1,
+             FirstRadius = 10):
+    #This will do a search pattern and when it finds a coin it will
+    #automatically calculate the radius of the coin
+    #and scan it within autofocused-determined parameters
+    
+    #1: grid search from min X and Y in multiples of 10 mm (dime diam/2)
+    #2: use brightness, change in focus, or color as metric for "found a coin"
+    #3: When coin is found, do a focus sweep to find rough focus location
+    #4: When focus is found, move in small increments sideways to find edge
+    #5: Use semicircle radius and FOV to calculate circle radius (and center?)
+    #6: Create and perform scan (Optimization:focus heights, circle vs. square)
+    
+    XYGrid = DefineScan(SearchXMin,SearchXMax,SearchYMin,SearchYMax,
+                        GlobalZ,GlobalZ,1,1,FirstRadius,FirstRadius,1,1)
+
+    XLocations, YLocations = XYGrid['X'], XYGrid['Y']
+    PotentialCoins = []
+    
+    #1: rough grid search
+
+    for i in range (len(XLocations)):
+        X,Y = XLocations[i],YLocations[i]
+        AllGoTo(X,Y)
+        
+        success = WaitForConfirmMovements(X,Y,GlobalZ)
+        if not success:
+            print('proper timeout catching block needed if this prints (AutoCoin function) ')
+        pic = TakePicture(cap)
+
+
+        #1.5 callibrate against build plate
+        if i == 0:
+            
+            (buildplate, focuspic) = FindZFocus(GenerateZ(SearchZMin,SearchZMax,0.2))
+            
                 
-    
+        #2: Magic found a coin function
+        if FoundCoin(pic): #magic
+            print('found a possible coin at {},{}'.format(X,Y))
+            PotentialCoins.append((X,Y,pic))
+            if coins == 1: #don't bother checking rest of board
+                break
 
-def CalculateOverlap(XSteps,YSteps,PixelsPerStep=1,XWidth=640,YHeight=480):
-    #basic function gives percent overlap based on x/y pixels per step (same value if straight scope)
-    #generally wasteful to exceed 50 percent overlap
-    
-    #3750 =~ 4000 steps away from object (19 =~20mm) 1 to 1 pixels per step with dinolite basic 
-    #500 steps or 2.5ish mm is 1.5 pixels/step
-    
-    #250 steps away (2nd zoom mode only) is 7.5 pixels/step 
-    
-    XOverlap = ((XWidth-XSteps*PixelsPerStep)/XWidth)*100 #in percent
-    YOverlap = ((YHeight-YSteps*PixelsPerStep)/YHeight)*100
-    
-    print ("X overlap is {}%, Y Overlap is {} if {} Pixels Per Step displacement".format(XOverlap,YOverlap,PixelsPerStep))
-    
-    return (XOverlap,YOverlap,PixelsPerStep)
+    for PotentialCoin in PotentialCoins:
+        AllGoTo(PotentialCoin[0],PotentialCoin[1], GlobalZ)
+        #3 focus sweep
+        (focusheight, focuspic) = FindZFocus(GenerateZ(SearchZMin + buildplate + 0.5,
+                                                       SearchZMax + buildplate + 5,0.2))
+        
+            
 
-    
+    print('AutoCoin done')
+            
+
+
 def DefineScan(XMin, XMax, YMin, YMax, ZMin, ZMax, RMin, RMax, XSteps=100, YSteps=100, ZSteps=1, RSteps=1):
     """core from stack exchange. https://stackoverflow.com/questions/20872912/raster-scan-pattern-python
     modified october 11 2018 to include Z and R, meaning R is now set in absolute positions
@@ -382,7 +459,6 @@ def DefineScan(XMin, XMax, YMin, YMax, ZMin, ZMax, RMin, RMax, XSteps=100, YStep
                      'R':[round(num,2) for num in NewNewRScan]}
     
     
-    CalculateOverlap(XSteps,YSteps,PixelsPerStep=1)
     
     print("{} images".format(len(NewNewXScan)))
     
@@ -476,7 +552,7 @@ def ShowCamera(cap=False,camera_choice=1,TrackTheBug=True,Width=1280,Height=960)
     
     #ColorLower, ColorUpper = (64,255,255) , (29,86,6) #green
     
-    ColorLowers = [(64,255,255),(10,100,20)] #note "s". cycle through to get color
+    ColorLowers = [(64,255,255),(10,100,20)] #note lower"s". cycle through to get color
     ColorUppers = [(29,86,6),(20,255,200)] 
     ColorsIndex = 0 #count and cycle through
     NumberOfColors = len(ColorLowers)
@@ -489,7 +565,7 @@ def ShowCamera(cap=False,camera_choice=1,TrackTheBug=True,Width=1280,Height=960)
         if not ret:
             break
         #cv2.setMouseCallback(DefaultName,MoveFromClick)#possibly bad looped
-        k = cv2.waitKey(1)
+        k = cv2.waitKey(30)
         
         if k%256 == 32: #this and video capture now before frame modification
             # SPACE pressed take picture
@@ -656,6 +732,8 @@ def ZStackKinda(ZCoord, subdiv_dims = (4,4),
     """takes pictures at ZCoord and then can call max_pool_subdivided_images
     with desired chunking amount and finally returns fakestacked image"""
 
+    
+
     if camera == 'default':
         camera = cap #still don't know the best way to say this
     frames = []
@@ -689,6 +767,20 @@ def GenerateZ(LowZ,HighZ,Precision):
         LowZ = round(LowZ+Precision,2)
 
     return(ZHeights)
+    
+def CalculateStepSize(PixelsPerStep=370,
+                      XOverlap = 40, YOverlap = 40,
+                      XWidth = 640, YHeight = 480):
+    #returns correct amount to move X and Y for desired amount of overlap and pixel size.
+    #Step in PixelsPerStep can refer to literal steps or just mm. mm easier
+    #overlap in percent
+    
+    XSteps = round(XWidth/PixelsPerStep - (((XOverlap/100)*XWidth)/PixelsPerStep),3)
+    YSteps = round(YHeight/PixelsPerStep - (((YOverlap/100)*YHeight)/PixelsPerStep),3)
+
+    
+    return XSteps,YSteps
+
 
 def CallibratePlate(CoordinatePoints = [(25,60),(90,125),(105,30),(62,75)],
                     LowPoint = 3,
@@ -730,17 +822,33 @@ def CallibratePlate(CoordinatePoints = [(25,60),(90,125),(105,30),(62,75)],
     return(Focuses)
     
 
-def FindZFocus(ZCoord,GoToFocus = True, camera='default'):
+def FindZFocus(ZCoord, Comprehensive = False, GoToFocus = True, camera='default'):
     if camera == 'default':
         camera = cap #still don't know the best way to say this
     frames = []
     blurs = []
 
-    if GlobalZ == ZCoord[-1]: #flip if starting at top
-        ZCoord.reverse()
-    
-    for Z in ZCoord: #ZCoord list of Z values to go to
+    #index of coord closest to current location for speed optimization
+    index = np.argmin(np.abs(np.array(ZCoord)-GlobalZ))
+    initial = ZCoord[index]
+        
+    counter = 0
+    ZTraveled = []
+    for i, Z in enumerate(ZCoord):
+
+        if index + i < len(ZCoord):
+            GoingUp = True
+            RealIndex = index + i
+            
+        else:
+            GoingUp = False
+            counter +=1
+            RealIndex = index - counter
+
+        Z = ZCoord[RealIndex]
+        ZTraveled.append(Z)
         ZGoTo(Z)
+        #print ("i: {} RealIndex: {} counter: {}".format(i,RealIndex, counter))
         while True:
             positions = GetPositions()
             
@@ -752,16 +860,37 @@ def FindZFocus(ZCoord,GoToFocus = True, camera='default'):
 
         frame = TakePicture(camera)
         blur = CalculateBlur(frame)
-        frames.append(frame)
-        blurs.append(blur)
-    
-    
-    ZFocus = ZCoord[blurs.index(max(blurs))]
-    BestFrame = frames[blurs.index(max(blurs))]
-    
+
+        if GoingUp:
+            frames.append(frame)
+            blurs.append(blur)
+            if Comprehensive == False and i > 2: #arrest search if overshoot focus point    
+                if (blurs[i-2] > 1000) and (blurs[i] < blurs [i-1]) and (blurs[i-1] < blurs[i-2]):
+                    break         
+        
+        else:
+            frames.insert(0,frame)
+            blurs.insert(0,blur)
+            if Comprehensive == False and i > 2: #arrest search if overshoot focus point    
+                TrueMax = blurs.index(max(blurs)) #(more spaghetti)
+                #print('TrueMax is {}'.format(TrueMax))
+                if TrueMax > 2: #going down. don't worry about absolutes
+                    if (blurs[TrueMax] > 1000) and (blurs[TrueMax] > blurs[TrueMax - 1]) and (blurs[TrueMax-1] > blurs[TrueMax-2]):
+                        break         
+        
+
+            
+    if GoingUp:
+        ZFocus = ZTraveled[blurs.index(max(blurs))]
+        BestFrame = frames[blurs.index(max(blurs))]
+    else:
+        ZFocus = ZCoord[TrueMax + RealIndex]
+        BestFrame = frames[blurs.index(max(blurs))]
+        
     if GoToFocus:
         ZGoTo(ZFocus)
-        
+    
+    
     return (ZFocus,BestFrame)
 
 def MakeNameFromPositions(X,Y,Z,R,FileType = ".jpg"):
@@ -800,13 +929,6 @@ def ControlDino(setting = "FLCLevel 6"):
 
         
 
-DefaultScan = {'FileType':".jpg",'Width':1280,'Height':960
-                  ,'CameraSettings': [],'Restarted Scan':False,
-                  "AutoFocus":False, "Z Heights": [],
-               'ScanLocations':{'X':[],'Y':[],'Z':[],'R':[]},
-               "Save Location":"", "Start Time":0, "PointInScan": 0,
-               "Failures":[], "VibrationControl":0.2,
-               'Camera':False, "ScanRates": []}
                
 def GridScan(ScanConditions): # DefaultScan dictionary available for modifying
 
