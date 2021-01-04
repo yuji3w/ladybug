@@ -436,6 +436,7 @@ def AutoCoin(cap,
         ScanLocations = GridToCircle(GridLocations,XMiddle,YMiddle,Radius)
         ScanLocations = InterlaceZ(ScanLocations,ZCoord = FocusList)
         
+        
         DefaultScan['ScanLocations'] = ScanLocations
         DefaultScan['Camera'] = cap
 
