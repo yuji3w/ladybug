@@ -1,6 +1,9 @@
     #!/usr/bin/env python3
 
-#MARCH 16 2020! Convert beefy gui to try and run a scan with gcodes and like physically clicking buttons on the dinolite program
+#MARCH 16 2020! Convert beefy gui to try and run a scan with gcodes
+#and like physically clicking buttons on the dinolite program
+
+#December 28 2020: It has been a heck of a year since March 16.
 
 from numpy import * #for generating scan parameters
 import random #for repeatability tests
@@ -25,17 +28,17 @@ from utils.pickandplace import * #Automated PCB inspection test
 import tsp #traveling salesman module. Requires pandas. Really slow
 import utils.track_ball as ObjectTracker 
 import utils.findcolors as findcolors #for object tracking with color
-
+import circlify #for calculating evenly spaced points within circle for autofocus
 
 #dictionary passed into gridscan. At minimum must change
 #scanlocations! Can be made with definescan
 
-DefaultScan = {'FileType':".jpg",'Width':1280,'Height':960
+DefaultScan = {'FileType':".jpg",'Width':640,'Height':480
                   ,'CameraSettings': [],'Restarted Scan':False,
                   "AutoFocus":False, "Z Heights": [],
                'ScanLocations':{'X':[],'Y':[],'Z':[],'R':[]},
                "Save Location":"", "Start Time":0, "PointInScan": 0,
-               "Failures":[], "VibrationControl":0.2,
+               "Failures":[], "VibrationControl":0.15,
                'Camera':False, "ScanRates": []}
 
 
@@ -90,15 +93,6 @@ myFont = tk.font.Font(family='Helvetica', size=12, weight='bold')
 myBigFont = tk.font.Font(family='Helvetica', size=20,weight='bold')
 font.families()
 
-def CalibratePixels(cap,method='manual'):
-    #function to convert millimeters into pixels
-    #could be made automatic
-    
-    if method == 'manual':
-        frame = TakePicture(cap)
-        
-
-    return PixelsPerMM
 
 def ConvertStepsToMM (XSteps,YSteps,ZSteps,ESteps, XStepsPerMM=80,YStepsPerMM=80,ZStepsPerMM=400,EStepsPerMM = 33.33):
     XMM = round(XSteps/XStepsPerMM,4)
@@ -172,7 +166,6 @@ def GetPositions(machine = 'ladybug',timeout=1):
     #this is the most likely function to be culprit if movement works but scan doesn't
     #Originally meant for normal cartesian marlin
     
-    
     sleeptime = 0.05 #can I calculate things in other threads during this time? 
     
     if machine == 'ladybug': #fix so it doesn't fail at runtime. not proper 4sure
@@ -219,7 +212,7 @@ def GetPositions(machine = 'ladybug',timeout=1):
         
             return(False)
 
-def WaitForConfirmMovements(X,Y,Z,attempts=50): #50 is several seconds
+def WaitForConfirmMovements(X,Y,Z,attempts=250): #50 is several seconds
     #should make it based around predicted amount of time; fails in unusual slow scans 
     #calls get_positions until positions returned is positions desired
     #if it fails twice that means we're not moving at all.
@@ -314,75 +307,298 @@ def CloseSerial(machine = 'ladybug'):
     except NameError:
         pass
 
-
-def FoundCoin(pic,threshold = 150):
+"""
+def FoundCoin(pic, reference, threshold = 12):
     #magically determines if a picture contains a coin
-    #coins are shiny, right? Have more color than dark surface?
+    #coins are shiny, right? Have more color than dark surface? (hint: no)
+    ColorScore = (abs(pic[0].mean()) + abs(pic[0].mean()) + abs(pic[0].mean()))
+    #expected that coin and plate plate will be at difference focus
+    CoinFocus = CalculateBlur(pic)
     
-    if pic[0].mean() + pic[1].mean() + pic[2].mean() > threshold:
-        return True
+    ReferenceFocus = CalculateBlur(reference)
+    FocusScore = abs(CoinFocus - ReferenceFocus)
+    
+    CoinScore = log(FocusScore) + log(ColorScore)
+     
+    if CoinScore > threshold:
+        return True, CoinScore
+    else:
+        return False, CoinScore
     #more magic needed for robustness
+"""
 
+def FoundCoin(pic, threshhold = 50):
+    #magically determines if a picture contains a coin...
+    #wait, does it? No! It just checks to see if it's blurry!
+    #It assumes we're focused on the build plate! Ridiculous!
+    #And yet, this is WAY more robust than the last method.
 
-def AutoCoin(cap, coins=1,
-             SearchXMin = 10, SearchXMax = 100,
-             SearchYMin=10, SearchYMax=100,
+    CoinScore = CalculateBlur(pic)
+    if CoinScore < threshhold:
+        return True, CoinScore
+    else:
+        return False, CoinScore
+
+def AutoCoin(cap,
+             SearchXMin = 20, SearchXMax = 100,
+             SearchYMin=20, SearchYMax=100,
              SearchZMin = 0,SearchZMax = 5,
-             FOVLOW = 1, FocusHeights = 1,
-             FirstRadius = 10):
+             FieldOfView = 1.6, FocusPoints = 5,
+             MaxFocusPoints = 3,
+             DepthOfField = 0.1, 
+             FirstRadius = 10, relief = 0.5,
+             SaveLocation = "AutoCoin\\"):
     #This will do a search pattern and when it finds a coin it will
     #automatically calculate the radius of the coin
-    #and scan it within autofocused-determined parameters
+    #and scan it within autofocused-determined parameter
     
-    #1: grid search from min X and Y in multiples of 10 mm (dime diam/2)
-    #2: use brightness, change in focus, or color as metric for "found a coin"
-    #3: When coin is found, do a focus sweep to find rough focus location
-    #4: When focus is found, move in small increments sideways to find edge
-    #5: Use semicircle radius and FOV to calculate circle radius (and center?)
-    #6: Create and perform scan (Optimization:focus heights, circle vs. square)
+    XMovement, YMovement = round(FieldOfView * 0.8,1), round(FieldOfView*0.6,1)
     
+    Home()
+    WaitForConfirmMovements(0,0,0)
+
+    TrueCoins = {(0,0):{'R': 0, 'PointsOfFocus': []}} #(X, Y): Radius, FocusHeights, anything else
+    FocusSet = set()
+    #1.5 callibrate against build plate
+    junk = MoveConfirmSnap(SearchXMin,SearchYMin,0,cap)
+    (BuildPlate, FocusPic) = FindZFocus()
     XYGrid = DefineScan(SearchXMin,SearchXMax,SearchYMin,SearchYMax,
-                        GlobalZ,GlobalZ,1,1,FirstRadius,FirstRadius,1,1)
-
+                        BuildPlate,BuildPlate,1,1,FirstRadius,FirstRadius,1,1)
     XLocations, YLocations = XYGrid['X'], XYGrid['Y']
-    PotentialCoins = []
     
-    #1: rough grid search
-
-    for i in range (len(XLocations)):
-        X,Y = XLocations[i],YLocations[i]
-        AllGoTo(X,Y)
-        
-        success = WaitForConfirmMovements(X,Y,GlobalZ)
-        if not success:
-            print('proper timeout catching block needed if this prints (AutoCoin function) ')
-        pic = TakePicture(cap)
-
-
-        #1.5 callibrate against build plate
-        if i == 0:
+    
+    for i in range (len(XLocations)):    #1: rough grid search
             
-            (buildplate, focuspic) = FindZFocus(GenerateZ(SearchZMin,SearchZMax,0.2))
-            
+        X, Y, Z = XLocations[i],YLocations[i], BuildPlate
+
+        pic = MoveConfirmSnap(X,Y,Z,cap)
+
                 
         #2: Magic found a coin function
-        if FoundCoin(pic): #magic
-            print('found a possible coin at {},{}'.format(X,Y))
-            PotentialCoins.append((X,Y,pic))
-            if coins == 1: #don't bother checking rest of board
-                break
-
-    for PotentialCoin in PotentialCoins:
-        AllGoTo(PotentialCoin[0],PotentialCoin[1], GlobalZ)
-        #3 focus sweep
-        (focusheight, focuspic) = FindZFocus(GenerateZ(SearchZMin + buildplate + 0.5,
-                                                       SearchZMax + buildplate + 5,0.2))
+        truth, val = FoundCoin(pic) #bool, score
         
+        if truth: #magic
+            print('found a possible coin at {},{}'.format(X,Y))
+            duplicate = False
+            for coin in TrueCoins.keys(): #don't scan if duplicate
+                TrueX, TrueY, TrueR = coin[0], coin[1], TrueCoins[coin]['R']               
+                if (TrueX - X)**2 + (TrueY - Y)**2 <= TrueR**2:
+                    print('Nevermind, already scanned this area')
+                    duplicate = True 
+                    break
+
+            if not duplicate: #scan coin and add results to TrueCoins
+                
+                results = CalculateOutline(X,Y,BuildPlate)
+        
+                if not results: #False Positive or can't find boundaries
+                    continue
+            else:
+                continue
             
+        else:
+            continue
+        
+        XMiddle, YMiddle, Radius = results[0], results[1], results[2]
+        TrueCoins[(XMiddle,YMiddle)] = {'R': Radius, 'PointsOfFocus': []}
+        XYFocusPoints = DivideCircle(XMiddle,YMiddle,Radius,FocusPoints) #optional: scanlocations
+        
+        for point in XYFocusPoints: #places to check focus
+            
+            xfocus, yfocus = point[0], point[1]
+            MoveConfirmSnap(xfocus,yfocus, BuildPlate, cap)
+            FocusHeight, CoinFocusPic = FindZFocus() #Future: analyze subimage
+
+            if FocusHeight <= BuildPlate + 0.1: #too close, another false positive
+                print('False Positive, focus height at {}, bottom surface at {}'.format(FocusHeight,BuildPlate))
+                FalsePositive = True
+                break
+            FalsePositive = False
+            
+            TrueCoins[(XMiddle,YMiddle)]['PointsOfFocus'].append((xfocus,yfocus,FocusHeight,CoinFocusPic))
+            FocusSet.add(FocusHeight) #Future: Make sure it's not too many images, or use best ones
+            
+        if FalsePositive:
+            continue
+        FocusList = list(FocusSet) 
+        if len(FocusList) > 1: 
+            print('multiply that number by {}'.format(len(FocusList)))
+        print('Z Heights we are looking at: {}'.format(FocusList))
+
+        #Calculate boundaries. Rectangle first, then circle
+        GridLocations = DefineScan(XMiddle - Radius,
+                                   XMiddle + Radius,
+                                   YMiddle - Radius,
+                                   YMiddle + Radius,
+                                   FocusHeight, FocusHeight,
+                                   1, 1, XMovement,YMovement, 1, 1)
+        
+        ScanLocations = GridToCircle(GridLocations,XMiddle,YMiddle,Radius)
+        ScanLocations = InterlaceZ(ScanLocations,ZCoord = FocusList)
+        
+        DefaultScan['ScanLocations'] = ScanLocations
+        DefaultScan['Camera'] = cap
+
+        if SaveLocation == 'Default': #prompts user for filedialog
+            GridScan(DefaultScan)
+        
+        else:
+            folder = SaveLocation + "/" + str(XMiddle) + str(YMiddle) + str(Radius)
+
+            if not os.path.exists(folder): #should hopefully continue saving in the same folder after restart
+                    os.makedirs(folder)
+                    
+            DefaultScan['Save Location'] = folder
+            DefaultScan['Start Time'] = time.time()
+            DefaultScan['Restarted Scan'] = True
+            GridScan(DefaultScan)
 
     print('AutoCoin done')
-            
 
+
+def GridToCircle(GridLocations,XCenter, YCenter, Radius):
+    #given a square grid formed by using DefineScan,
+    #Removes terms that would be sticking out if it were a circle.
+    #this is so obvious and relatively easy and woo hoo new years eve 2020
+
+    ScanLocations = GridLocations
+    
+    track = []
+    for i in range(len(ScanLocations['X'])):
+        X,Y = ScanLocations['X'][i],ScanLocations['Y'][i]
+        if ((X-XCenter)**2) + ((Y-YCenter)**2) > Radius**2:
+            track.append(i)
+            
+    for key in ScanLocations.keys():
+        
+        for index in sorted(track, reverse=True):
+            del ScanLocations[key][index]
+                
+    print('{} images reduced to {} upon circularification'.format(len(ScanLocations['X']) + len(track), len(ScanLocations['X'])))
+    #why does this give the wrong value? 
+    return ScanLocations
+            
+        
+def CalculateOutline(StartX = -1, StartY = -1, StartZ = -1,
+                     shape = 'coin', SearchDistance = 40,
+                     Precision = 1, FOVLOW = 1):
+    
+    StartX, StartY, StartZ = int(StartX), int(StartY), float(StartZ)
+    
+    if StartX == -1:
+        StartX = int(GlobalX)
+    if StartY == -1:
+        StartY = int(GlobalY)
+    if StartZ == -1:
+        StartZ = GlobalZ
+    
+    if shape == 'coin':
+        
+        #Go to right, then go left then go middle
+        #go up, then down, then middle
+        #this point is center of coin
+        XLeft, XRight, YUpper, YLower = 0, 0, 0, 0
+        
+        AllGoTo(StartX,StartY,StartZ)
+        record = {} #going to use tuples of XYZ as keys... hang on tight!
+        for i in range(StartX, StartX + SearchDistance, Precision):
+
+            X, Y, Z = i, StartY, StartZ
+            pic = MoveConfirmSnap(X,Y,Z,cap)
+            record[(X,Y,Z)] = FoundCoin(pic) #True or False, Score
+
+            if (not record [(X,Y,Z)][0]
+            and (X - Precision,Y,Z) in record.keys()
+            and not record[(X - Precision, Y, Z)][0]):
+
+                XRight = X - Precision #we overshot
+                break
+
+        for i in range(StartX - Precision,
+                       StartX - SearchDistance if StartX - SearchDistance > 0 else 0,
+                       Precision * -1 ): #now we go left
+            X, Y, Z = i, StartY, StartZ
+
+            pic = MoveConfirmSnap(X,Y,Z,cap)
+
+            record[(X,Y,Z)] = FoundCoin(pic)
+
+            if (not record [(X,Y,Z)][0]
+                and (X + Precision, Y, Z) in record.keys()
+                and not record[(X + Precision, Y, Z)][0]):
+
+                XLeft = X + Precision
+                break
+
+        
+
+        if XLeft and XRight:
+            XMiddle = round((XLeft + XRight)/2,1) 
+            
+        else:
+            print('failed to find X coin boundaries!')
+            return(False)
+
+        for i in range(StartY, StartY + SearchDistance, Precision):
+
+            X, Y, Z = XMiddle, i, StartZ
+
+            pic = MoveConfirmSnap(X,Y,Z,cap)
+
+            record[(X,Y,Z)] = FoundCoin(pic) 
+
+            if ((not record [(X,Y,Z)][0])
+                and ((X,Y-Precision,Z) in record.keys())
+                and (not record[(X, Y - Precision, Z)][0])):
+
+                YUpper = Y - Precision #we overshot
+                break
+
+        for i in range(StartY - Precision,
+                       StartY - SearchDistance if StartY - SearchDistance > 0 else 0,
+                       Precision * -1 ): #now we go down
+
+            X,Y,Z = XMiddle, i, StartZ
+
+            pic = MoveConfirmSnap(X,Y,Z,cap)
+
+            record[(X,Y,Z)] = FoundCoin(pic)
+
+            if (not record [(X,Y,Z)][0]
+                and (X, Y + Precision, Z) in record.keys()
+                and not record[(X, Y + Precision, Z)][0]):
+
+                YLower = Y + Precision
+                break
+            
+        if YUpper and YLower:
+            Radius, YMiddle = round((YUpper - YLower)/2,1), round((YLower + YUpper)/2,1) 
+        else:
+            print('failed to find Y boundaries')
+            return False
+
+        if Radius <=1: #it's noise
+            print('too small false positive')
+            return False
+
+        else:
+            
+            print('Found coin at X: {}, Y: {}, Radius {}'.format(XMiddle,YMiddle,Radius))
+
+        
+
+        return (XMiddle, YMiddle, Radius)     
+        
+        
+def MoveConfirmSnap(X,Y,Z,cap): #I use this a bunch so function it is
+    AllGoTo(X,Y,Z)
+    success = WaitForConfirmMovements(X,Y,Z)
+    
+    if not success:
+        print('proper timeout catching block needed if this prints (MoveConfirmSnap) ')
+    pic = TakePicture(cap)
+    return(pic)
+    
 
 def DefineScan(XMin, XMax, YMin, YMax, ZMin, ZMax, RMin, RMax, XSteps=100, YSteps=100, ZSteps=1, RSteps=1):
     """core from stack exchange. https://stackoverflow.com/questions/20872912/raster-scan-pattern-python
@@ -392,7 +608,7 @@ def DefineScan(XMin, XMax, YMin, YMax, ZMin, ZMax, RMin, RMax, XSteps=100, YStep
 
     modified 3/19/20 to act with millimeters and floats (to two decimal places) 
     
-    returns a list of four lists which each contain the absolute positions at every point in a scan for x,y,z,r"""
+    returns a dictioanry of four lists which each contain the absolute positions at every point in a scan for x,y,z,r"""
 
     XMax = XMax+0.01 #same idea as modifying steps before but this time with 0.01 mm
     YMax = YMax+0.01
@@ -418,11 +634,9 @@ def DefineScan(XMin, XMax, YMin, YMax, ZMin, ZMax, RMin, RMax, XSteps=100, YStep
     yscan = concatenate(yscan)
 
     """up until this, it works just fine for x/y. I am adding
-    my own code to account for Z now. Not efficient if there are a LOT of Z changes (it does X/Y rastering and returns to initial position for each Z).
+    my own code to account for Z now. Not efficient if there are a LOT of Z changes
+    (it does X/Y rastering and returns to initial position for each Z).
     Otherwise it's ok.
-    Note this will return empty lists if zgrid is empty (minz=maxz)
-
-
     """
 
     NewXScan = []
@@ -464,6 +678,38 @@ def DefineScan(XMin, XMax, YMin, YMax, ZMin, ZMax, RMin, RMax, XSteps=100, YStep
     
     
     return(ScanLocations)
+
+def InterlaceZ(ScanLocations, ZCoord = [1,2]):
+    #Takes a ScanLocations Dictionary (expected 2 dimensional, unchanging Z)
+    #and interlaces ZCoord inside it. Gives Z priority for better stacking
+    #Advanced: Z Height depends on X/Y location as opposed to comprehensive
+    XLocations = ScanLocations['X']
+    YLocations = ScanLocations['Y']
+    ZLocations = ScanLocations['Z']
+    RLocations = ScanLocations['R']
+    
+
+    NewX = []
+    NewY = []
+    NewZ = []
+    NewR = []
+    flag = -1     
+    for i in range(len(XLocations)):
+        flag = flag * -1
+        for j in ZCoord[::flag]:
+            NewX.append(XLocations[i]) #duplicates
+            NewY.append(YLocations[i])
+            NewR.append(RLocations[i])
+            NewZ.append(j)
+
+            
+    ScanLocations['X'] = NewX
+    ScanLocations['Y'] = NewY
+    ScanLocations['Z'] = NewZ
+    ScanLocations['R'] = NewR
+
+    return ScanLocations
+
 
 def RotateScan(ScanLocations, degrees = 30):
     #function to rotate a 3D array around a specified axis (currently Y). Ideally, around arb point in space.  
@@ -531,7 +777,8 @@ def MoveFromClick(event,x,y,flags,param):
         KeepBugInCenter(x,y,PixelsPerUnit=PixelsPerUnit)
 
 '''     
-def ShowCamera(cap=False,camera_choice=1,TrackTheBug=True,Width=1280,Height=960):
+def ShowCamera(cap=False,camera_choice=1,
+               TrackTheBug=False,Width=640,Height=480):
     #best to call this with threading so you can use other gui controls 
     #though really they should be integrated together.
     #or some other third smaller solution
@@ -602,13 +849,17 @@ def ShowCamera(cap=False,camera_choice=1,TrackTheBug=True,Width=1280,Height=960)
             AllGoTo(GlobalX,GlobalY,GlobalZ-LittleZ,update=False, speed=ZSpeed)
         if k%256 == ord('='): #- and + but + is shifted
             AllGoTo(GlobalX,GlobalY,GlobalZ+LittleZ,update=False, speed=ZSpeed)
+        if k%256 == ord('f'): #AutoFocus
+            y = threading.Thread(target=FindZFocus) #update image during
+            y.start()
+            
         
         if k%256 == ord('c'): #toggle color choice
             ColorsIndex +=1
             if ColorsIndex == NumberOfColors:
                 ColorsIndex = 0 
             ColorLower, ColorUpper = ColorLowers[ColorsIndex],ColorUppers[ColorsIndex] #brown
-            print('colors tracked toggled. Green? Brown? who knows')
+            print('colors track toggled. lower hsv range: {} upper {}'.format(ColorLower,ColorUpper))
         if k%256 == ord('v'): #toggle video
             try:
                 out.release() #first close if not start
@@ -625,8 +876,7 @@ def ShowCamera(cap=False,camera_choice=1,TrackTheBug=True,Width=1280,Height=960)
         except NameError:
             pass
         
-        if k%256 == 102:
-            #f pressed. Toggle bug tracking
+        if k%256 == ord('t'): #Toggle bug tracking
             TrackTheBug = not TrackTheBug #swap 
             print("Track the bug: {}".format(TrackTheBug))
         if k%256 == ord('b'): #resize window
@@ -781,6 +1031,32 @@ def CalculateStepSize(PixelsPerStep=370,
     
     return XSteps,YSteps
 
+def DivideCircle(XCenter, YCenter, Radius, Divisions, ScanLocations=None):
+    #"circle within circle" packing problem
+    #internal circles have constant radius and points those circle centers
+    consts = []
+    locations = []
+    
+    for i in range(Divisions):
+        consts.append(1)
+        
+    circles = circlify.circlify(consts)
+    for circle in circles:
+        x, y, r = circle.x, circle.y, circle.r
+        x = round((XCenter - (x * Radius)),1)
+        y = round((YCenter - (y * Radius)),1)
+
+        if ScanLocations: #force points to be closest to original scan points
+            xindex = np.argmin(np.abs(np.array(ScanLocations['X'])-x))
+            x = ScanLocations['X'][xindex]
+            yindex = np.argmin(np.abs(np.array(ScanLocations['Y'])-y))
+            y = ScanLocations['Y'][yindex]
+            
+        locations.append((x,y))
+
+    return locations
+
+
 
 def CallibratePlate(CoordinatePoints = [(25,60),(90,125),(105,30),(62,75)],
                     LowPoint = 3,
@@ -822,9 +1098,30 @@ def CallibratePlate(CoordinatePoints = [(25,60),(90,125),(105,30),(62,75)],
     return(Focuses)
     
 
-def FindZFocus(ZCoord, Comprehensive = False, GoToFocus = True, camera='default'):
+def FindZFocus(ZCoord='broad', Comprehensive = False,
+               GoToFocus = True, camera='default',
+               ScannedBroad = False):
+    
     if camera == 'default':
         camera = cap #still don't know the best way to say this
+
+    if ZCoord == 'broad':
+        ZCoord = GenerateZ((GlobalZ-10 if GlobalZ-10 >= 0 else 0),
+                           GlobalZ + 10,
+                           0.5)
+        ScannedBroad = True #scan again with narrower range
+        
+        if GlobalZ >=0.5:
+            AllGoTo(GlobalX,GlobalY, GlobalZ - 0.5,update=False) #if you're already focused this is faster
+
+    elif ZCoord == 'narrow':
+        ZCoord = GenerateZ((GlobalZ-0.6 if GlobalZ-0.6 >= 0 else 0),
+                           GlobalZ + 0.6,
+                           0.1)
+        if GlobalZ >= 0.3:
+            AllGoTo(GlobalX,GlobalY, GlobalZ - 0.3,update=False)
+        
+        
     frames = []
     blurs = []
 
@@ -847,7 +1144,7 @@ def FindZFocus(ZCoord, Comprehensive = False, GoToFocus = True, camera='default'
 
         Z = ZCoord[RealIndex]
         ZTraveled.append(Z)
-        ZGoTo(Z)
+        AllGoTo(GlobalX,GlobalY,Z,update=False)
         #print ("i: {} RealIndex: {} counter: {}".format(i,RealIndex, counter))
         while True:
             positions = GetPositions()
@@ -856,7 +1153,7 @@ def FindZFocus(ZCoord, Comprehensive = False, GoToFocus = True, camera='default'
                 break
             else:
                 time.sleep(0.05)
-        time.sleep(0.1) #vibration control
+        time.sleep(0.05) #vibration control
 
         frame = TakePicture(camera)
         blur = CalculateBlur(frame)
@@ -864,8 +1161,8 @@ def FindZFocus(ZCoord, Comprehensive = False, GoToFocus = True, camera='default'
         if GoingUp:
             frames.append(frame)
             blurs.append(blur)
-            if Comprehensive == False and i > 2: #arrest search if overshoot focus point    
-                if (blurs[i-2] > 1000) and (blurs[i] < blurs [i-1]) and (blurs[i-1] < blurs[i-2]):
+            if Comprehensive == False and i >= 2: #arrest search if overshoot focus point    
+                if (blurs[i-2] > 100) and (blurs[i] < blurs [i-1]) and (blurs[i-1] < blurs[i-2]):
                     break         
         
         else:
@@ -875,7 +1172,7 @@ def FindZFocus(ZCoord, Comprehensive = False, GoToFocus = True, camera='default'
                 TrueMax = blurs.index(max(blurs)) #(more spaghetti)
                 #print('TrueMax is {}'.format(TrueMax))
                 if TrueMax > 2: #going down. don't worry about absolutes
-                    if (blurs[TrueMax] > 1000) and (blurs[TrueMax] > blurs[TrueMax - 1]) and (blurs[TrueMax-1] > blurs[TrueMax-2]):
+                    if (blurs[TrueMax] > 100) and (blurs[TrueMax] > blurs[TrueMax - 1]) and (blurs[TrueMax-1] > blurs[TrueMax-2]):
                         break         
         
 
@@ -888,8 +1185,11 @@ def FindZFocus(ZCoord, Comprehensive = False, GoToFocus = True, camera='default'
         BestFrame = frames[blurs.index(max(blurs))]
         
     if GoToFocus:
-        ZGoTo(ZFocus)
+        AllGoTo(GlobalX,GlobalY,ZFocus,update=False)
     
+    if ScannedBroad: #slightly more efficient "where am I" scan
+        FindZFocus(ZCoord='narrow') #recursive doesn't return anything
+        
     
     return (ZFocus,BestFrame)
 
@@ -1012,7 +1312,7 @@ def GridScan(ScanConditions): # DefaultScan dictionary available for modifying
             Failures.append(i) #point in scan
             print('restarted at point {} grr'.format(i))
             
-            SuccessfulWait = WaitForConfirmMovements(X,Y,(Z if not AutoFocus else GlobalZ),attempts=50)
+            SuccessfulWait = WaitForConfirmMovements(X,Y,(Z if not AutoFocus else GlobalZ),attempts=250)
             #twice in a row would suck            
 
         #Picture taking block
@@ -1052,7 +1352,7 @@ def GridScan(ScanConditions): # DefaultScan dictionary available for modifying
                     ScanRates.append(time.time())
                     
                     if len(ScanRates)>1:
-                        tttt = ScanRates[-1]-ScanRates[-2] #time taken this time
+                        tttt = int(ScanRates[-1]-ScanRates[-2]) #time taken this time
                         print("{} of {} pics took {} seconds".format(PointInScan,len(XCoord),tttt))
 
                 break                    
@@ -1072,7 +1372,7 @@ def GridScan(ScanConditions): # DefaultScan dictionary available for modifying
         ZGoTo(ZCoord[0])
     RGoTo(RCoord[0])
 
-    CloseCamera(cap) #uncomment if things are strange here
+    #CloseCamera(cap) #uncomment if things are strange here
 
 def XGoTo(XDest,speed = 10000):
     #everything being switched to milimeters at this point, sorry. 
@@ -1170,7 +1470,7 @@ def XGet(event):
         XDest = float(event.widget.get())
         XGoTo(XDest)
     except ValueError: #hey dumbo enter a number
-        print ("hey dumbo enter a number")
+        print ("Please enter a real number")
 
 def YGet(event):
     '''records enter press from text box (YEntry) and calls "go to specified location function'''
@@ -1178,7 +1478,7 @@ def YGet(event):
         YDest = float(event.widget.get())
         YGoTo(YDest)
     except ValueError: #hey dumbo enter an number
-        print ("hey dumbo enter an number")
+        print ("Please enter a real number")
 
 
 
@@ -1226,7 +1526,7 @@ def ZGet(event):
         ZDest = float(event.widget.get())
         ZGoTo(ZDest)
     except ValueError: #hey dumbo enter an number
-        print ("hey dumbo enter a number")
+        print ("Please enter a real number")
 
 
 
