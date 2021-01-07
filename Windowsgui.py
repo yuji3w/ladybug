@@ -8,6 +8,7 @@
 from numpy import * #for generating scan parameters
 import random #for repeatability tests
 import time
+import copy
 import math
 import os
 import string
@@ -360,8 +361,9 @@ def AutoCoin(cap,
     TrueCoins = {(0,0):{'R': 0, 'PointsOfFocus': []}} #(X, Y): Radius, FocusHeights, anything else
     FocusSet = set()
     #1.5 callibrate against build plate
-    junk = MoveConfirmSnap(SearchXMin,SearchYMin,0,cap)
+    BlankPicture = MoveConfirmSnap(SearchXMin,SearchYMin,0,cap)
     (BuildPlate, FocusPic) = FindZFocus()
+    
     XYGrid = DefineScan(SearchXMin,SearchXMax,SearchYMin,SearchYMax,
                         BuildPlate,BuildPlate,1,1,FirstRadius,FirstRadius,1,1)
     XLocations, YLocations = XYGrid['X'], XYGrid['Y']
@@ -369,7 +371,7 @@ def AutoCoin(cap,
     
     for i in range (len(XLocations)):    #1: rough grid search
             
-        X, Y, Z = XLocations[i],YLocations[i], BuildPlate
+        X, Y, Z, R = XLocations[i],YLocations[i], BuildPlate, GlobalR
 
         pic = MoveConfirmSnap(X,Y,Z,cap)
 
@@ -402,7 +404,8 @@ def AutoCoin(cap,
         XMiddle, YMiddle, Radius = results[0], results[1], results[2]
         TrueCoins[(XMiddle,YMiddle)] = {'R': Radius, 'PointsOfFocus': []}
         XYFocusPoints = DivideCircle(XMiddle,YMiddle,Radius,FocusPoints) #optional: scanlocations
-        
+        if (XMiddle,YMiddle) not in XYFocusPoints:
+            XYFocusPoints.append((XMiddle,YMiddle))
         for point in XYFocusPoints: #places to check focus
             
             xfocus, yfocus = point[0], point[1]
@@ -417,6 +420,7 @@ def AutoCoin(cap,
             
             TrueCoins[(XMiddle,YMiddle)]['PointsOfFocus'].append((xfocus,yfocus,FocusHeight,CoinFocusPic))
             FocusSet.add(FocusHeight) #Future: Make sure it's not too many images, or use best ones
+            
             
         if FalsePositive:
             continue
@@ -435,6 +439,8 @@ def AutoCoin(cap,
         
         ScanLocations = GridToCircle(GridLocations,XMiddle,YMiddle,Radius)
         ScanLocations = InterlaceZ(ScanLocations,ZCoord = FocusList)
+        FullLocations = InterlaceZ(GridLocations,ZCoord=FocusList)
+        
         
         
         DefaultScan['ScanLocations'] = ScanLocations
@@ -446,23 +452,82 @@ def AutoCoin(cap,
         else:
             folder = SaveLocation + "/" + str(XMiddle) + str(YMiddle) + str(Radius)
 
-            if not os.path.exists(folder): #should hopefully continue saving in the same folder after restart
+            if not os.path.exists(folder): #To save in the same folder after restart
                     os.makedirs(folder)
                     
             DefaultScan['Save Location'] = folder
             DefaultScan['Start Time'] = time.time()
             DefaultScan['Restarted Scan'] = True
             GridScan(DefaultScan)
+            print('This coin is done')
+            print('Saving missing files...')
+            
+            Missing = FindMissingLocations(FullLocations,ScanLocations)
+            SaveMissingLocations(Missing,folder,BlankPicture)
+            
 
-    print('AutoCoin done')
+    print('All AutoCoin done')
+
+def SaveMissingLocations(Missing,ParentFolder,FakePicture, FileType='.jpg'):
+    for i in range(len(Missing['X'])):
+        X, Y, Z, R = (Missing['X'][i],
+                      Missing['Y'][i],
+                      Missing['Z'][i],
+                      Missing['R'][i])
+        
+        
+        folder = MakeFolderFromPositions(X,Y,Z,R,ParentFolder,FileType)
+        name  = MakeNameFromPositions(X,Y,Z,R,FileType)    
+        SavePicture(folder + "/" + name,FakePicture)
+            
+
+    
 
 
+def FindMissingLocations(FullLocations, PartialLocations):
+    #difference between the two dictionaries
+    #sets would be easy but order matters, you know
+    
+    MissingLocations = {'X':[],'Y':[],'Z':[],'R':[]}
+    FullList = []
+    PartList = []
+    MissList = []
+    
+    for i in range(len(FullLocations['X'])):
+        FullX, FullY, FullZ, FullR = (FullLocations['X'][i],
+                                      FullLocations['Y'][i],
+                                      FullLocations['Z'][i],
+                                      FullLocations['R'][i])
+        FullList.append([FullX,FullY,FullZ,FullR])
+        
+    for i in range(len(PartialLocations['X'])):
+        
+        PartX, PartY, PartZ, PartR = (PartialLocations['X'][i],
+                                      PartialLocations['Y'][i],
+                                      PartialLocations['Z'][i],
+                                      PartialLocations['R'][i])
+        
+        PartList.append([PartX,PartY,PartZ,PartR])
+
+    for item in FullList:
+        if item not in PartList:
+            MissList.append(item)
+
+    for item in MissList:
+        MissingLocations['X'].append(item[0])
+        MissingLocations['Y'].append(item[1])
+        MissingLocations['Z'].append(item[2])
+        MissingLocations['R'].append(item[3])
+        
+    return MissingLocations
+
+        
 def GridToCircle(GridLocations,XCenter, YCenter, Radius):
     #given a square grid formed by using DefineScan,
     #Removes terms that would be sticking out if it were a circle.
     #this is so obvious and relatively easy and woo hoo new years eve 2020
 
-    ScanLocations = GridLocations
+    ScanLocations = copy.deepcopy(GridLocations)
     
     track = []
     for i in range(len(ScanLocations['X'])):
@@ -680,7 +745,7 @@ def DefineScan(XMin, XMax, YMin, YMax, ZMin, ZMax, RMin, RMax, XSteps=100, YStep
     
     return(ScanLocations)
 
-def InterlaceZ(ScanLocations, ZCoord = [1,2]):
+def InterlaceZ(ScanLocations, ZCoord):
     #Takes a ScanLocations Dictionary (expected 2 dimensional, unchanging Z)
     #and interlaces ZCoord inside it. Gives Z priority for better stacking
     #Advanced: Z Height depends on X/Y location as opposed to comprehensive
@@ -1226,9 +1291,16 @@ def ControlDino(setting = "FLCLevel 6"):
 
     subprocess.call('DN_DS_Ctrl.exe ' + setting)    
         
-    
 
-        
+def MakeFolderFromPositions(X,Y,Z,R,ParentFolder,FileType='.jpg'):
+    ZStr = (''.join(filter(lambda i: i.isdigit(), ('{0:.2f}'.format(Z))))).zfill(5)
+    RStr = (''.join(filter(lambda i: i.isdigit(), ('{0:.2f}'.format(R))))).zfill(5)
+    folder = ParentFolder + "/Z" + ZStr + "R" + RStr #will make new folder on each change in Z or R
+    if not os.path.exists(folder): #should hopefully continue saving in the same folder after restart
+        os.makedirs(folder)
+     
+    return folder
+
 
                
 def GridScan(ScanConditions): # DefaultScan dictionary available for modifying
@@ -1327,22 +1399,14 @@ def GridScan(ScanConditions): # DefaultScan dictionary available for modifying
                 else:
                     Z,frame = FindZFocus(PotentialZ,False,cap) #should rework to allow walking
 
-
                 #picture saving block
-
                 #5 digits total with 2 decimals always and leading and trailing 0s if necessary
-
-                ZStr = (''.join(filter(lambda i: i.isdigit(), ('{0:.2f}'.format(Z))))).zfill(5)
-                RStr = (''.join(filter(lambda i: i.isdigit(), ('{0:.2f}'.format(R))))).zfill(5)
-                
-                name  = MakeNameFromPositions(X,Y,Z,R,FileType)
-                folder = save_location + "/Z" + ZStr + "R" + RStr #will make new folder on each change in Z or R
-
-                if not os.path.exists(folder): #should hopefully continue saving in the same folder after restart
-                    os.makedirs(folder)
-                    
+                folder = MakeFolderFromPositions(X,Y,Z,R,save_location,FileType)
+                name  = MakeNameFromPositions(X,Y,Z,R,FileType)    
                 SavePicture(folder + "/" + name,frame)
-                            
+
+               
+                         
             except Exception: #Filesaving errors go here
                 print('partial (not total) failure for picture {}'.format(name))
                 
