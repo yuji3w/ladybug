@@ -162,7 +162,7 @@ def EngageSteppers():
     time.sleep(0.05)
     SendGCode("M302 P1") #PREVENTS ERRORS FROM 'cold' EXTRUSION
     time.sleep(0.05)
-    #SendGCode("M203 Z5") #lets z go a bit faster. disabled if using weak nano motor
+    SendGCode("M203 Z5") #lets z go a bit faster. disabled if using weak nano motor
     #time.sleep(0.05) #disabled for NANO. uncomment if Z too slow
     SendGCode("M17") #engage steppers
 
@@ -224,6 +224,14 @@ def GetPositions(machine = 'ladybug',timeout=1):
         
             return(False)
 
+def CheckTriggered(LadyBug):
+        junk = LadyBug.read()
+        time.wait(0.01)
+        SendGCode("M119")
+        data = LadyBug.read()
+        return ("Something to do with this data")
+        
+
 def WaitForConfirmMovements(X,Y,Z,attempts=250): #50 is several seconds
     #should make it based around predicted amount of time; fails in unusual slow scans 
     #calls get_positions until positions returned is positions desired
@@ -269,14 +277,15 @@ def RestartSerial(port=8, BAUD = 115200,timeout=timeout):
          print ('please specify CNC port and/or BAUD rate (example: 6 , 115200)')
 
     while True:
+        time.sleep(0.01)
 
         try:
             CloseSerial() #will pass if no port by ladybug name open
 
             LadyBug = serial.Serial('COM' + str(port), BAUD,timeout=timeout)
-            time.sleep(1.5)
+            time.sleep(1)
             EngageSteppers()
-            time.sleep(1.5)
+            time.sleep(1)
             #TurnOnFan()
             #time.sleep(1.5)
             return LadyBug #name of controllable CNC machine
@@ -373,8 +382,8 @@ def AutoCoin(cap,
              SearchYMin=20, SearchYMax=100,
              SearchZMin = 0,SearchZMax = 5,
              FieldOfView = 1.6, FocusPoints = 5,
-             MaxFocusPoints = 3,
-             DepthOfField = 0.1, 
+             MaxFocusPoints = 10,
+             DepthOfField = 0.05, 
              FirstRadius = 10, relief = 0.5,
              SaveLocation = "AutoCoin\\",
              AcceptableBlur = 50):
@@ -383,13 +392,21 @@ def AutoCoin(cap,
     #and scan it within autofocused-determined parameter
     
     XMovement, YMovement = round(FieldOfView * 0.8,1), round(FieldOfView*0.6,1)
+
     
-    Home()
+    positions = GetPositions()
+    if (positions['X'] == 0 or
+        positions['Y'] == 0 or
+        positions['Z'] == 0):
+        
+        Home()
+   
+    
     WaitForConfirmMovements(0,0,0)
 
     TrueCoins = {(0,0):{'R': 0, 'PointsOfFocus': []}} #(X, Y): Radius, FocusHeights, anything else
-    FocusSet = set()
-    #1.5 callibrate against build plate
+
+    #1.5 callibrate against build plate. BlankPicture fills circle gaps
     BlankPicture = MoveConfirmSnap(SearchXMin,SearchYMin,0,cap)
     (BuildPlate, FocusPic) = FindZFocus()
     
@@ -429,19 +446,27 @@ def AutoCoin(cap,
             
         else:
             continue
-        #add 0.5 to radius to account for weird lumpy coins
-        XMiddle, YMiddle, Radius = results[0], results[1], results[2] + 1
+        #add 1 to radius to account for weird lumpy coins
+        XMiddle, YMiddle, Radius = results[0], results[1], results[2] + 2
         TrueCoins[(XMiddle,YMiddle)] = {'R': Radius, 'PointsOfFocus': []}
         XYFocusPoints = DivideCircle(XMiddle,YMiddle,Radius,FocusPoints) #optional: scanlocations
-        if (XMiddle,YMiddle) not in XYFocusPoints:
-            XYFocusPoints.append((XMiddle,YMiddle))
+        MoveConfirmSnap(XMiddle,YMiddle,GlobalZ,cap)
+        BasicHeight, MiddlePic = FindZFocus()
+
+        low = (BasicHeight - ((MaxFocusPoints//2) * DepthOfField))
+        high = (BasicHeight + ((MaxFocusPoints//2) * DepthOfField))
+        ZHeights = GenerateZ(low,high,DepthOfField)
+        FocusSet = set()
+                
+        
         for point in XYFocusPoints: #places to check focus
 
             FalsePositive = False
             
             xfocus, yfocus = point[0], point[1]
-            MoveConfirmSnap(xfocus,yfocus, BuildPlate, cap)
-            FocusHeight, CoinFocusPic = FindZFocus() #Future: analyze subimage
+            MoveConfirmSnap(xfocus,yfocus, BasicHeight, cap)
+            
+            FocusHeight, CoinFocusPic = FindZFocus(ZHeights) #Future: analyze subimage
 
             if FocusHeight <= BuildPlate + 0.1: #too close, another false positive
                 print('False Positive, focus height at {}, bottom surface at {}'.format(FocusHeight,BuildPlate))
@@ -457,9 +482,9 @@ def AutoCoin(cap,
             
         if FalsePositive:
             continue
-        FocusList = list(FocusSet) 
-        if len(FocusList) > 1: 
-            print('multiply that number by {}'.format(len(FocusList)))
+        
+        FocusList = sorted(list(FocusSet))
+
         print('Z Heights we are looking at: {}'.format(FocusList))
 
         #Calculate boundaries. Rectangle first, then circle
@@ -470,7 +495,7 @@ def AutoCoin(cap,
                                    FocusHeight, FocusHeight,
                                    1, 1, XMovement,YMovement, 1, 1)
         
-        ScanLocations = GridToCircle(GridLocations,XMiddle,YMiddle,Radius)
+        ScanLocations = GridToCircle(GridLocations,XMiddle,YMiddle,Radius) 
         ScanLocations = InterlaceZ(ScanLocations,ZCoord = FocusList)
         FullLocations = InterlaceZ(GridLocations,ZCoord=FocusList)
         
@@ -1800,7 +1825,12 @@ def HomeZ():
     
 def Home():
     #probably could consume the other three
+    #SLOW DOWN FIRST 1/10/21
+    SendGCode('M203 Y20 X30') #this alone changes things so much
+    
     SendGCode('G28')
+
+    SendGCode('M203 Y80 X80') #and make it an okay speed again
     
     GlobalZ = 0
     ZPosition.configure(text="Z: "+str(GlobalZ) + "/" + str(ZMax))
