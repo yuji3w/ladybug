@@ -9,8 +9,10 @@ from numpy import * #for generating scan parameters
 import random #for repeatability tests
 import time
 import copy
+import glob
 import math
 import os
+import shutil
 import string
 import tkinter as tk #contains GUI, can be removed if converted to headless
 from tkinter import font
@@ -20,11 +22,15 @@ import select #for timeouts and buzzing when usb gets disconnect
 import pickle #for saving scan data and resuming
 import serial 
 import subprocess
+import datetime
 import cv2
+import re #regular expressions
 import threading
 from PIL import Image, ImageTk
 from imutils.video import FPS
 from utils.imagetools import * #tools for manipulating images during scan
+from utils import findSameZ
+from utils import RemoveBlurry
 from utils.pickandplace import * #Automated PCB inspection test
 import tsp #traveling salesman module. Requires pandas. Really slow
 import utils.track_ball as ObjectTracker 
@@ -52,6 +58,8 @@ GlobalX = 0 #left and right (on finder)
 GlobalY = 0 #towards and away from you (on finder)
 GlobalZ = 0
 GlobalR = 0 #keep same naming scheme, but R = rotation
+
+GlobalFocus = {} #will contain focus information for each location 
 
 #These are scan parameters intended to be set by the GUI and can otherwise be ignored
 
@@ -95,6 +103,8 @@ myBigFont = tk.font.Font(family='Helvetica', size=20,weight='bold')
 font.families()
 
 
+
+
 def ConvertStepsToMM (XSteps,YSteps,ZSteps,ESteps, XStepsPerMM=80,YStepsPerMM=80,ZStepsPerMM=400,EStepsPerMM = 33.33):
     XMM = round(XSteps/XStepsPerMM,4)
     YMM = round(YSteps/YStepsPerMM,4)
@@ -134,6 +144,7 @@ def SaveGCode(positions, filename = 'default'):
             GCodeFile.write(line+"\n")
         GCodeFile.close()
     print('GCodes written to {}'.format(filename))
+
 def SendGCode(GCode,machine='ladybug'):
 
     if machine == 'ladybug':
@@ -286,6 +297,12 @@ def RestartSerial(port=8, BAUD = 115200,timeout=timeout):
                 print('Failed to connect.')
                 return None
 
+def UpdateFocusDict(location, pic):
+    #used to allow threaded calculation of focus during time waits
+    global GlobalFocus   
+    blur = CalculateBlur(pic)
+    GlobalFocus[location] = blur
+
 def FocusDemo(cap):
     #Tinyscopecap is first camera with built in autofocus
     #turns out it's really easy to alter with opencv
@@ -328,14 +345,25 @@ def FoundCoin(pic, reference, threshold = 12):
     #more magic needed for robustness
 """
 
-def FoundCoin(pic, threshhold = 50):
+
+def is_dark(img, thrshld = 15):
+    is_dark = np.mean(img) < thrshld
+    return is_dark
+
+def FoundCoin(pic, threshold = 50):
     #magically determines if a picture contains a coin...
     #wait, does it? No! It just checks to see if it's blurry!
     #It assumes we're focused on the build plate! Ridiculous!
     #And yet, this is WAY more robust than the last method.
+    #amended: if brightness very low, darkness is used as metric instead
+    #This is not extremely robust but helps if using highly polarized light
 
-    CoinScore = CalculateBlur(pic)
-    if CoinScore < threshhold:
+    if is_dark(pic): #light = coin if brightness very low
+        CoinScore = threshold + 1
+    else:
+        CoinScore = CalculateBlur(pic)
+        
+    if CoinScore < threshold:
         return True, CoinScore
     else:
         return False, CoinScore
@@ -348,7 +376,8 @@ def AutoCoin(cap,
              MaxFocusPoints = 3,
              DepthOfField = 0.1, 
              FirstRadius = 10, relief = 0.5,
-             SaveLocation = "AutoCoin\\"):
+             SaveLocation = "AutoCoin\\",
+             AcceptableBlur = 50):
     #This will do a search pattern and when it finds a coin it will
     #automatically calculate the radius of the coin
     #and scan it within autofocused-determined parameter
@@ -400,13 +429,15 @@ def AutoCoin(cap,
             
         else:
             continue
-        
-        XMiddle, YMiddle, Radius = results[0], results[1], results[2]
+        #add 0.5 to radius to account for weird lumpy coins
+        XMiddle, YMiddle, Radius = results[0], results[1], results[2] + 1
         TrueCoins[(XMiddle,YMiddle)] = {'R': Radius, 'PointsOfFocus': []}
         XYFocusPoints = DivideCircle(XMiddle,YMiddle,Radius,FocusPoints) #optional: scanlocations
         if (XMiddle,YMiddle) not in XYFocusPoints:
             XYFocusPoints.append((XMiddle,YMiddle))
         for point in XYFocusPoints: #places to check focus
+
+            FalsePositive = False
             
             xfocus, yfocus = point[0], point[1]
             MoveConfirmSnap(xfocus,yfocus, BuildPlate, cap)
@@ -416,7 +447,9 @@ def AutoCoin(cap,
                 print('False Positive, focus height at {}, bottom surface at {}'.format(FocusHeight,BuildPlate))
                 FalsePositive = True
                 break
-            FalsePositive = False
+            elif is_dark(CoinFocusPic): #prevent focusing on edges
+                print("off the edge AKA dark pic, don't count this one")
+                continue
             
             TrueCoins[(XMiddle,YMiddle)]['PointsOfFocus'].append((xfocus,yfocus,FocusHeight,CoinFocusPic))
             FocusSet.add(FocusHeight) #Future: Make sure it's not too many images, or use best ones
@@ -450,7 +483,8 @@ def AutoCoin(cap,
             GridScan(DefaultScan)
         
         else:
-            folder = SaveLocation + "/" + str(XMiddle) + str(YMiddle) + str(Radius)
+            ScanName = "Scan " + time.strftime("%Y%m%d-%H%M%S")
+            folder = SaveLocation + ScanName
 
             if not os.path.exists(folder): #To save in the same folder after restart
                     os.makedirs(folder)
@@ -464,9 +498,13 @@ def AutoCoin(cap,
             
             Missing = FindMissingLocations(FullLocations,ScanLocations)
             SaveMissingLocations(Missing,folder,BlankPicture)
-            
+
+            print('Starting sort and stack pipeline...')
+            SortOrStackPipe(folder,extension = ".jpg", AcceptableBlur = AcceptableBlur)
 
     print('All AutoCoin done')
+
+
 
 def SaveMissingLocations(Missing,ParentFolder,FakePicture, FileType='.jpg'):
     for i in range(len(Missing['X'])):
@@ -480,8 +518,6 @@ def SaveMissingLocations(Missing,ParentFolder,FakePicture, FileType='.jpg'):
         name  = MakeNameFromPositions(X,Y,Z,R,FileType)    
         SavePicture(folder + "/" + name,FakePicture)
             
-
-    
 
 
 def FindMissingLocations(FullLocations, PartialLocations):
@@ -521,7 +557,140 @@ def FindMissingLocations(FullLocations, PartialLocations):
         
     return MissingLocations
 
+
+def SortOrStackPipe(ParentFolder,extension = ".jpg", AcceptableBlur = 50):
+    #this will take a parent folder containing standard output of scan
+    #create symbolic copies of all files sorted by X/Y location
+    #get rid of all files with no useful information (completely blurred)
+    #decide if stacking is worth it for any image sets, and if it is,
+    #will put those in its own special folder and in future attempt stack
+    #TO PREVENT NEED FOR STACKING set the acceptable blur to a high number
+    #amended to work with pickle'd dictionary file before calculating values again
+    
+    rawFolders = [x[0] for x in os.walk(ParentFolder) if os.path.isdir(x[0])][1:]
+    
+    originals = ParentFolder + "\\Originals (sorted by Z height)"
+
+    if not os.path.exists(originals): 
+        os.makedirs(originals)
+    else:
+        print('expecting folder to be original unsorted. Problems ahead!')
+
+    for original in rawFolders: #move to originals location
+        shutil.move(original,originals)
+
+    AllNames = [y for x in os.walk(originals) for y in glob.glob(os.path.join(x[0], '*'+extension))]
+
+    # try to import pickled dictionary file
+    try:
+        with open(ParentFolder + "\\FocusDictionary.pkl", 'rb') as FocusFile:
+            FocusDictionary = pickle.load(FocusFile)            
+    except (FileNotFoundError, EOFError) as e:
+        print('unable to find pickle focus dictionary from previous scan. Generating now...')
+        FocusDictionary = {}
+                
+    print('calculating any missing focus metrics for each image...')
+    
+    for name in AllNames:
+        positions = MakePositionsFromName(name)
+        if positions not in FocusDictionary: #calculate blur and add to dictionary
+            pic = cv2.imread(name)
+            blur = CalculateBlur(pic)
+            FocusDictionary[positions] = blur
+            
+    with open(ParentFolder + "\\FocusDictionary.pkl", 'wb') as FocusFile:
+        pickle.dump(FocusDictionary, FocusFile)
+    
+    #todo: replace existing blur code now that we have a blur dictionary 
+    
+    ZSorted = ParentFolder + "\\Originals (sorted by XY location)"
+    DeBlurred = ParentFolder + "\\Blurry removed (sorted by XY location)"
+    BestPerStack = ParentFolder + "\\Temp"
+    StitchThese = ParentFolder + "\\Stitch these for immediate results"
+    StitchMix = ParentFolder + "\\Add stacked images here then stitch"
+    StackThese = ParentFolder + "\\Stack these then add to stitch folder"
+    
+    
+    print('making new directories and moving things around...')
+    if not os.path.exists(ZSorted):
+        os.makedirs(ZSorted)
+    if not os.path.exists(DeBlurred):
+        os.makedirs(DeBlurred)
+    if not os.path.exists(StitchThese):
+        os.makedirs(StitchThese)
+    if not os.path.exists(StackThese):
+        os.makedirs(StackThese)
+    if not os.path.exists(StitchMix):
+        os.makedirs(StitchMix)
+    if not os.path.exists(BestPerStack):
+        os.makedirs(BestPerStack)
         
+    #Find multiple Z heights for each XY
+    findSameZ.main(originals,ZSorted,extension=extension,copy=False)
+    findSameZ.main(originals,DeBlurred,extension=extension,copy=False)
+    findSameZ.main(originals,BestPerStack,extension=extension,copy=False)
+    
+    #remove unacceptably blurry pics.
+    print('sorting out blurry images...')
+    RemoveBlurry.main(DeBlurred,AcceptableBlur=AcceptableBlur,extension=extension, FocusDictionary=FocusDictionary)
+    #do the same thing again with a high blur amount to get best of stackable images for the lazy
+    RemoveBlurry.main(BestPerStack,AcceptableBlur=50000,extension=extension, FocusDictionary=FocusDictionary)
+
+    #determine which definitely don't need stacking (one pic per folder)
+
+    print('moving images that should be stacked for best results...')
+    count = 0 
+    ImageFolders = [x[0] for x in os.walk(DeBlurred)][1:]
+    for folder in ImageFolders:
+        files = os.listdir(folder)
+        if len(files) == 1:
+            source, dest = folder + "\\" + files[0], StitchMix + "\\" + files[0]
+            os.link(source,dest)
+        else: #move to new directory for stacking. Can't link entire directory for some reason
+            count+=1
+            parent = os.path.basename(folder)
+            dest = StackThese + "\\" + parent
+            if not os.path.exists(dest):
+                os.makedirs(dest)
+            for file in files:
+                source = folder + "\\" + file
+                dest = StackThese + "\\" + parent + "\\" + file
+                os.link(source,dest)
+    
+    #Transfer best of stackable images too for lazy people
+    LazyFolders = [x[0] for x in os.walk(BestPerStack)][1:]
+    for folder in LazyFolders:
+        files = os.listdir(folder)
+        if len(files) == 1:
+            source, dest = folder + "\\" + files[0], StitchThese + "\\" + files[0]
+            os.link(source,dest)
+    
+                
+    print('{} images need to be stacked before optimal stitching'.format(count))
+
+
+
+def MakeNameFromPositions(X,Y,Z,R,FileType = ".jpg"):
+    
+    XStr = (''.join(filter(lambda i: i.isdigit(), ('{0:.2f}'.format(X))))).zfill(5)
+    YStr = (''.join(filter(lambda i: i.isdigit(), ('{0:.2f}'.format(Y))))).zfill(5)
+    ZStr = (''.join(filter(lambda i: i.isdigit(), ('{0:.2f}'.format(Z))))).zfill(5)
+    RStr = (''.join(filter(lambda i: i.isdigit(), ('{0:.2f}'.format(R))))).zfill(5)
+    name = "X" + XStr + "Y" + YStr + "Z" + ZStr + "R" + RStr + FileType
+    return name
+
+
+def MakePositionsFromName(name):
+    #inverse of Make Name From Positions (harder)
+    #from file name or basename returns an (X,Y,Z,R) tuple
+    basename = os.path.splitext(os.path.basename(name))[0]
+    splitname = re.sub( r"([A-Z])", r" \1", basename).split()
+    numbersonly = [x[1:] for x in splitname]
+    positions = [float((x[0:-2] + "." + x[-2:])) for x in numbersonly]
+    positions = tuple(positions)
+
+    return positions
+
 def GridToCircle(GridLocations,XCenter, YCenter, Radius):
     #given a square grid formed by using DefineScan,
     #Removes terms that would be sticking out if it were a circle.
@@ -1190,7 +1359,7 @@ def FindZFocus(ZCoord='broad', Comprehensive = False,
         
     frames = []
     blurs = []
-
+    
     #index of coord closest to current location for speed optimization
     index = np.argmin(np.abs(np.array(ZCoord)-GlobalZ))
     initial = ZCoord[index]
@@ -1259,14 +1428,6 @@ def FindZFocus(ZCoord='broad', Comprehensive = False,
     
     return (ZFocus,BestFrame)
 
-def MakeNameFromPositions(X,Y,Z,R,FileType = ".jpg"):
-    
-    XStr = (''.join(filter(lambda i: i.isdigit(), ('{0:.2f}'.format(X))))).zfill(5)
-    YStr = (''.join(filter(lambda i: i.isdigit(), ('{0:.2f}'.format(Y))))).zfill(5)
-    ZStr = (''.join(filter(lambda i: i.isdigit(), ('{0:.2f}'.format(Z))))).zfill(5)
-    RStr = (''.join(filter(lambda i: i.isdigit(), ('{0:.2f}'.format(R))))).zfill(5)
-    name = "X" + XStr + "Y" + YStr + "Z" + ZStr + "R" + RStr + FileType
-    return name
 
 
 def ControlDino(setting = "FLCLevel 6"):
@@ -1304,7 +1465,8 @@ def MakeFolderFromPositions(X,Y,Z,R,ParentFolder,FileType='.jpg'):
 
                
 def GridScan(ScanConditions): # DefaultScan dictionary available for modifying
-
+    global GlobalFocus #this should be a passed in object, probably, for robust restarts. 
+    
     if not ScanConditions['Restarted Scan']:
         save_location = filedialog.askdirectory()
         start_time = time.time()
@@ -1402,8 +1564,14 @@ def GridScan(ScanConditions): # DefaultScan dictionary available for modifying
                 #picture saving block
                 #5 digits total with 2 decimals always and leading and trailing 0s if necessary
                 folder = MakeFolderFromPositions(X,Y,Z,R,save_location,FileType)
-                name  = MakeNameFromPositions(X,Y,Z,R,FileType)    
-                SavePicture(folder + "/" + name,frame)
+                name  = MakeNameFromPositions(X,Y,Z,R,FileType)
+                SavePicThread = threading.Thread(target=SavePicture,args=((folder + "/" + name),frame))
+                FocusThread = threading.Thread(target=UpdateFocusDict, args = ((X,Y,Z,R),frame))
+                #SavePicture(folder + "/" + name,frame)
+
+                FocusThread.start() # hopefully allows usefulness during idle sleep times
+                SavePicThread.start()                            
+
 
                
                          
@@ -1429,7 +1597,17 @@ def GridScan(ScanConditions): # DefaultScan dictionary available for modifying
     #end of scan, retaking failed pictures goes here
     print ('Failures: {}'.format(Failures)) #ints for serial and locations for pictures
     print ('scan completed successfully! Time taken: {}'.format(time.strftime("%H:%M:%S", time.gmtime(time.time() - start_time))))
+    print('Saving focus dictionary...')
 
+    try:
+        
+        FocusFile = open(save_location + '\\FocusDictionary.pkl', 'wb')
+        pickle.dump(GlobalFocus, FocusFile)
+        FocusFile.close()
+  
+    except Exception: 
+        print("Unable to save focus dictionary")    
+    
     #go back to beginning simplifies testing, but could also set a park position
     XGoTo(XCoord[0])
     YGoTo(YCoord[0])
