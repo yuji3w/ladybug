@@ -59,8 +59,6 @@ GlobalY = 0 #towards and away from you (on finder)
 GlobalZ = 0
 GlobalR = 0 #keep same naming scheme, but R = rotation
 
-GlobalFocus = {} #will contain focus information for each location 
-
 #These are scan parameters intended to be set by the GUI and can otherwise be ignored
 
 XScanMin = 0
@@ -224,7 +222,7 @@ def GetPositions(machine = 'ladybug',timeout=1):
         
             return(False)
 
-def CheckTriggered(LadyBug):
+def CheckTriggered(LadyBug): #superceded by just making homing slow 
         junk = LadyBug.read()
         time.wait(0.01)
         SendGCode("M119")
@@ -306,11 +304,10 @@ def RestartSerial(port=8, BAUD = 115200,timeout=timeout):
                 print('Failed to connect.')
                 return None
 
-def UpdateFocusDict(location, pic):
+def UpdateFocusDict(FocusDictionary, location, pic):
     #used to allow threaded calculation of focus during time waits
-    global GlobalFocus   
     blur = CalculateBlur(pic)
-    GlobalFocus[location] = blur
+    FocusDictionary[location] = blur
 
 def FocusDemo(cap):
     #Tinyscopecap is first camera with built in autofocus
@@ -381,11 +378,12 @@ def AutoCoin(cap,
              SearchXMin = 20, SearchXMax = 100,
              SearchYMin=20, SearchYMax=100,
              SearchZMin = 0,SearchZMax = 5,
-             FieldOfView = 1.6, FocusPoints = 5,
+             FieldOfView = 1.6, FocusPoints = 7,
              MaxFocusPoints = 10,
              DepthOfField = 0.05, 
              FirstRadius = 10, relief = 0.5,
              SaveLocation = "AutoCoin\\",
+             FocusDictionary = {},
              AcceptableBlur = 50):
     #This will do a search pattern and when it finds a coin it will
     #automatically calculate the radius of the coin
@@ -403,7 +401,6 @@ def AutoCoin(cap,
    
     
     WaitForConfirmMovements(0,0,0)
-
     TrueCoins = {(0,0):{'R': 0, 'PointsOfFocus': []}} #(X, Y): Radius, FocusHeights, anything else
 
     #1.5 callibrate against build plate. BlankPicture fills circle gaps
@@ -479,6 +476,7 @@ def AutoCoin(cap,
             TrueCoins[(XMiddle,YMiddle)]['PointsOfFocus'].append((xfocus,yfocus,FocusHeight,CoinFocusPic))
             FocusSet.add(FocusHeight) #Future: Make sure it's not too many images, or use best ones
             
+            #Add to FocusDictionary here
             
         if FalsePositive:
             continue
@@ -503,7 +501,8 @@ def AutoCoin(cap,
         
         DefaultScan['ScanLocations'] = ScanLocations
         DefaultScan['Camera'] = cap
-
+        DefaultScan['FocusDictionary'] = FocusDictionary
+        
         if SaveLocation == 'Default': #prompts user for filedialog
             GridScan(DefaultScan)
         
@@ -524,8 +523,12 @@ def AutoCoin(cap,
             Missing = FindMissingLocations(FullLocations,ScanLocations)
             SaveMissingLocations(Missing,folder,BlankPicture)
 
-            print('Starting sort and stack pipeline...')
-            SortOrStackPipe(folder,extension = ".jpg", AcceptableBlur = AcceptableBlur)
+            print('Starting sort and stack pipeline...') #could thread this
+            SortOrStackPipe(folder,extension = ".jpg", 
+                            AcceptableBlur = AcceptableBlur,
+                            FocusDictionary=FocusDictionary)
+            print('Sort and stack pipeline done. Continuing coin search')
+            FocusDictionary = {} #Prev step saves it. 
 
     print('All AutoCoin done')
 
@@ -583,7 +586,7 @@ def FindMissingLocations(FullLocations, PartialLocations):
     return MissingLocations
 
 
-def SortOrStackPipe(ParentFolder,extension = ".jpg", AcceptableBlur = 50):
+def SortOrStackPipe(ParentFolder, FocusDictionary = {}, extension = ".jpg", AcceptableBlur = 50):
     #this will take a parent folder containing standard output of scan
     #create symbolic copies of all files sorted by X/Y location
     #get rid of all files with no useful information (completely blurred)
@@ -605,14 +608,13 @@ def SortOrStackPipe(ParentFolder,extension = ".jpg", AcceptableBlur = 50):
         shutil.move(original,originals)
 
     AllNames = [y for x in os.walk(originals) for y in glob.glob(os.path.join(x[0], '*'+extension))]
-
-    # try to import pickled dictionary file
-    try:
-        with open(ParentFolder + "\\FocusDictionary.pkl", 'rb') as FocusFile:
-            FocusDictionary = pickle.load(FocusFile)            
-    except (FileNotFoundError, EOFError) as e:
-        print('unable to find pickle focus dictionary from previous scan. Generating now...')
-        FocusDictionary = {}
+    if not FocusDictionary: #not passed in, try to import pickled file 
+        try:
+            with open(ParentFolder + "\\FocusDictionary.pkl", 'rb') as FocusFile:
+                FocusDictionary = pickle.load(FocusFile)            
+        except (FileNotFoundError, EOFError) as e:
+            print('unable to find pickle focus dictionary from previous scan. Generating now...')
+            FocusDictionary = {}
                 
     print('calculating any missing focus metrics for each image...')
     
@@ -626,14 +628,12 @@ def SortOrStackPipe(ParentFolder,extension = ".jpg", AcceptableBlur = 50):
     with open(ParentFolder + "\\FocusDictionary.pkl", 'wb') as FocusFile:
         pickle.dump(FocusDictionary, FocusFile)
     
-    #todo: replace existing blur code now that we have a blur dictionary 
-    
     ZSorted = ParentFolder + "\\Originals (sorted by XY location)"
     DeBlurred = ParentFolder + "\\Blurry removed (sorted by XY location)"
     BestPerStack = ParentFolder + "\\Temp"
-    StitchThese = ParentFolder + "\\Stitch these for immediate results"
+    StitchThese = ParentFolder + "\\STITCH THESE for immediate results"
     StitchMix = ParentFolder + "\\Add stacked images here then stitch"
-    StackThese = ParentFolder + "\\Stack these then add to stitch folder"
+    StackThese = ParentFolder + "\\Stack these if desired"
     
     
     print('making new directories and moving things around...')
@@ -650,7 +650,7 @@ def SortOrStackPipe(ParentFolder,extension = ".jpg", AcceptableBlur = 50):
     if not os.path.exists(BestPerStack):
         os.makedirs(BestPerStack)
         
-    #Find multiple Z heights for each XY
+    #Find multiple Z heights for each XY. Future: Do all three in one go
     findSameZ.main(originals,ZSorted,extension=extension,copy=False)
     findSameZ.main(originals,DeBlurred,extension=extension,copy=False)
     findSameZ.main(originals,BestPerStack,extension=extension,copy=False)
@@ -1490,7 +1490,6 @@ def MakeFolderFromPositions(X,Y,Z,R,ParentFolder,FileType='.jpg'):
 
                
 def GridScan(ScanConditions): # DefaultScan dictionary available for modifying
-    global GlobalFocus #this should be a passed in object, probably, for robust restarts. 
     
     if not ScanConditions['Restarted Scan']:
         save_location = filedialog.askdirectory()
@@ -1511,8 +1510,9 @@ def GridScan(ScanConditions): # DefaultScan dictionary available for modifying
     PointInScan = ScanConditions['PointInScan']
     ScanLocations = ScanConditions['ScanLocations']
     CameraSettings = ScanConditions['CameraSettings']
+    FocusDictionary = ScanConditions['FocusDictionary']
     VibrationControl = ScanConditions['VibrationControl']
-            
+    
     XCoord = ScanLocations['X']
     YCoord = ScanLocations['Y']
     ZCoord = ScanLocations['Z']
@@ -1586,14 +1586,13 @@ def GridScan(ScanConditions): # DefaultScan dictionary available for modifying
                 else:
                     Z,frame = FindZFocus(PotentialZ,False,cap) #should rework to allow walking
 
-                #picture saving block
+                #picture and focus info saving block
                 #5 digits total with 2 decimals always and leading and trailing 0s if necessary
                 folder = MakeFolderFromPositions(X,Y,Z,R,save_location,FileType)
                 name  = MakeNameFromPositions(X,Y,Z,R,FileType)
-                SavePicThread = threading.Thread(target=SavePicture,args=((folder + "/" + name),frame))
-                FocusThread = threading.Thread(target=UpdateFocusDict, args = ((X,Y,Z,R),frame))
-                #SavePicture(folder + "/" + name,frame)
 
+                SavePicThread = threading.Thread(target=SavePicture,args=((folder + "/" + name),frame))
+                FocusThread = threading.Thread(target=UpdateFocusDict, args = (FocusDictionary,(X,Y,Z,R),frame))
                 FocusThread.start() # hopefully allows usefulness during idle sleep times
                 SavePicThread.start()                            
 
@@ -1627,7 +1626,7 @@ def GridScan(ScanConditions): # DefaultScan dictionary available for modifying
     try:
         
         FocusFile = open(save_location + '\\FocusDictionary.pkl', 'wb')
-        pickle.dump(GlobalFocus, FocusFile)
+        pickle.dump(FocusDictionary, FocusFile)
         FocusFile.close()
   
     except Exception: 
