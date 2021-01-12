@@ -108,38 +108,34 @@ def sortBlur(folder, AcceptableBlur=200, FocusDictionary = {}):
                       listdir(folder) if isfile(os.path.join(folder,
                       file))]
 
-        # print(imagePaths)
+        if imagePaths: #Empty lists rolling over causing failure I guess
+            bestFocusMetric = 0
+            bestImage = imagePaths[0] 
 
-        len(imagePaths)
-        bestFocusMetric = 0
-        bestImage = ''
-
-        # make the image grayscale and use LaPlace to evaluate focus
-        for imagePath in imagePaths:
-            
-            
-            #image = cv2.imread(imagePath)
-            #gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-
-                    # for focusMetric, higher is better
-            imagekey = MakePositionsFromName(imagePath)
-            
-            focusMetric = FocusDictionary[imagekey]
-
-            #focusMetric = variance_of_laplacian(gray)
-            blurDict[imagePath] = focusMetric
-            
-            if focusMetric > bestFocusMetric:
-                bestImage = imagePath
-                bestFocusMetric = focusMetric
-            if focusMetric < AcceptableBlur:  # modification starts here
-                FolderBadImages.append(imagePath)
+            for imagePath in imagePaths:
+                
+                imagekey = MakePositionsFromName(imagePath)
+                
+                focusMetric = FocusDictionary[imagekey] # for focusMetric, higher is better
+                
+                blurDict[imagePath] = focusMetric
+                
+                if focusMetric > bestFocusMetric:
+                    bestImage = imagePath
+                    bestFocusMetric = focusMetric
+                if focusMetric < AcceptableBlur:
+                    FolderBadImages.append(imagePath)
 
             if len(FolderBadImages) == len(imagePaths) \
                 and len(FolderBadImages) > 0:  # all fail metric, keep best
 
-                FolderBadImages.remove(bestImage)  # don't delete the best crappy on
+                try: 
+                
+                    FolderBadImages.remove(bestImage)  # don't delete the best crappy on
 
+                except ValueError:
+                    print('cannot remove or find {}'.format(bestImage))
+                      
         for image in FolderBadImages:
             BadImages.append(image)
 

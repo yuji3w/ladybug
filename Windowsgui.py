@@ -176,12 +176,14 @@ def GetPositions(machine = 'ladybug',timeout=1):
     #this is the most likely function to be culprit if movement works but scan doesn't
     #Originally meant for normal cartesian marlin
     
-    sleeptime = 0.05 #can I calculate things in other threads during this time? 
+    sleeptime = 0.02 #can I calculate things in other threads during this time? 
     
     if machine == 'ladybug': #fix so it doesn't fail at runtime. not proper 4sure
         machine = LadyBug 
-        
+
     previous_buffer = machine.read_all() #clear buffer essentially
+    LadyBug.reset_input_buffer() #possible fix attempt 1122021
+    previous_buffer = machine.read_all() #someone said do this twice
 
     SendGCode("M114") #report machine status
     
@@ -219,7 +221,7 @@ def GetPositions(machine = 'ladybug',timeout=1):
         time.sleep(sleeptime) #and loop back to try again
 
     if not dump:
-        
+            #This is the big unsolved problem. Why did the connection break?
             return(False)
 
 def CheckTriggered(LadyBug): #superceded by just making homing slow 
@@ -230,7 +232,7 @@ def CheckTriggered(LadyBug): #superceded by just making homing slow
         return ("Something to do with this data")
         
 
-def WaitForConfirmMovements(X,Y,Z,attempts=250): #50 is several seconds
+def WaitForConfirmMovements(X,Y,Z,attempts=100): #50 is several seconds
     #should make it based around predicted amount of time; fails in unusual slow scans 
     #calls get_positions until positions returned is positions desired
     #if it fails twice that means we're not moving at all.
@@ -263,7 +265,7 @@ def WaitForConfirmMovements(X,Y,Z,attempts=250): #50 is several seconds
                 
                 continue
             
-    #exceeded allotted attempts
+    #exceeded allotted attempts. This is a COMMUNICATION issue! WHYYYYY
     print('exceeded allotted {} attempts. USB disconnect?'.format(attempts))
     return False
 
@@ -381,7 +383,7 @@ def AutoCoin(cap,
              FieldOfView = 1.6, FocusPoints = 7,
              MaxFocusPoints = 10,
              DepthOfField = 0.05, 
-             FirstRadius = 10, relief = 0.5,
+             FirstRadius = 10,
              SaveLocation = "AutoCoin\\",
              FocusDictionary = {},
              AcceptableBlur = 50):
@@ -586,7 +588,7 @@ def FindMissingLocations(FullLocations, PartialLocations):
     return MissingLocations
 
 
-def SortOrStackPipe(ParentFolder, FocusDictionary = {}, extension = ".jpg", AcceptableBlur = 50):
+def SortOrStackPipe(ParentFolder, FocusDictionary = {}, extension = ".jpg", AcceptableBlur = 150):
     #this will take a parent folder containing standard output of scan
     #create symbolic copies of all files sorted by X/Y location
     #get rid of all files with no useful information (completely blurred)
@@ -1572,7 +1574,7 @@ def GridScan(ScanConditions): # DefaultScan dictionary available for modifying
             Failures.append(i) #point in scan
             print('restarted at point {} grr'.format(i))
             
-            SuccessfulWait = WaitForConfirmMovements(X,Y,(Z if not AutoFocus else GlobalZ),attempts=250)
+            SuccessfulWait = WaitForConfirmMovements(X,Y,(Z if not AutoFocus else GlobalZ),attempts=100)
             #twice in a row would suck            
 
         #Picture taking block
