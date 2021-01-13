@@ -176,7 +176,7 @@ def GetPositions(machine = 'ladybug',timeout=1):
     #this is the most likely function to be culprit if movement works but scan doesn't
     #Originally meant for normal cartesian marlin
     
-    sleeptime = 0.02 #can I calculate things in other threads during this time? 
+    sleeptime = 0.05 #can I calculate things in other threads during this time? 
     
     if machine == 'ladybug': #fix so it doesn't fail at runtime. not proper 4sure
         machine = LadyBug 
@@ -333,26 +333,15 @@ def CloseSerial(machine = 'ladybug'):
     except NameError:
         pass
 
-"""
-def FoundCoin(pic, reference, threshold = 12):
-    #magically determines if a picture contains a coin
-    #coins are shiny, right? Have more color than dark surface? (hint: no)
-    ColorScore = (abs(pic[0].mean()) + abs(pic[0].mean()) + abs(pic[0].mean()))
-    #expected that coin and plate plate will be at difference focus
-    CoinFocus = CalculateBlur(pic)
-    
-    ReferenceFocus = CalculateBlur(reference)
-    FocusScore = abs(CoinFocus - ReferenceFocus)
-    
-    CoinScore = log(FocusScore) + log(ColorScore)
-     
-    if CoinScore > threshold:
-        return True, CoinScore
-    else:
-        return False, CoinScore
-    #more magic needed for robustness
-"""
-
+def CircleDemo(cap, speed=500): #finds outline, focuses, goes around edge
+    param = CalculateOutline()
+    xc, yc, r = param[0], param[1], param[2]
+    MoveConfirmSnap(xc,yc,GlobalZ, cap)
+    focus, pic = FindZFocus()
+    MoveConfirmSnap(xc, yc-(r-2), focus, cap)
+    SendGCode("G2 I0 J{} F{}".format(r-1.5,speed))
+    #Arc shape. Move back a bit to center around edge. 
+    return (xc, yc, r)
 
 def is_dark(img, thrshld = 15):
     is_dark = np.mean(img) < thrshld
@@ -420,12 +409,11 @@ def AutoCoin(cap,
 
         pic = MoveConfirmSnap(X,Y,Z,cap)
 
-                
         #2: Magic found a coin function
         truth, val = FoundCoin(pic) #bool, score
         
         if truth: #magic
-            print('found a possible coin at {},{}'.format(X,Y))
+            print('found a possible coin (score: {}) at {},{}'.format(val,X,Y))
             duplicate = False
             for coin in TrueCoins.keys(): #don't scan if duplicate
                 TrueX, TrueY, TrueR = coin[0], coin[1], TrueCoins[coin]['R']               
@@ -446,7 +434,7 @@ def AutoCoin(cap,
         else:
             continue
         #add 1 to radius to account for weird lumpy coins
-        XMiddle, YMiddle, Radius = results[0], results[1], results[2] + 2
+        XMiddle, YMiddle, Radius = results[0], results[1], results[2] + 1.5
         TrueCoins[(XMiddle,YMiddle)] = {'R': Radius, 'PointsOfFocus': []}
         XYFocusPoints = DivideCircle(XMiddle,YMiddle,Radius,FocusPoints) #optional: scanlocations
         MoveConfirmSnap(XMiddle,YMiddle,GlobalZ,cap)
@@ -1425,7 +1413,9 @@ def FindZFocus(ZCoord='broad', Comprehensive = False,
             blurs.append(blur)
             if Comprehensive == False and i >= 2: #arrest search if overshoot focus point    
                 if (blurs[i-2] > 100) and (blurs[i] < blurs [i-1]) and (blurs[i-1] < blurs[i-2]):
-                    break         
+                    break
+                #elif (blurs[i] < 50) and (blurs[i] < blurs[i-1]) and (blurs[i-1] < blurs[i-2]): #going wrong way
+                #    break
         
         else:
             frames.insert(0,frame)
@@ -1435,7 +1425,9 @@ def FindZFocus(ZCoord='broad', Comprehensive = False,
                 #print('TrueMax is {}'.format(TrueMax))
                 if TrueMax > 2: #going down. don't worry about absolutes
                     if (blurs[TrueMax] > 100) and (blurs[TrueMax] > blurs[TrueMax - 1]) and (blurs[TrueMax-1] > blurs[TrueMax-2]):
-                        break         
+                        break
+                    #elif (blurs[TrueMax] < 50) and (blurs[TrueMax] > blurs[TrueMax -1]) and (blurs[TrueMax-1] > blurs[TrueMax-2]):
+                    #      break
         
 
             
@@ -1450,7 +1442,7 @@ def FindZFocus(ZCoord='broad', Comprehensive = False,
         AllGoTo(GlobalX,GlobalY,ZFocus,update=False)
     
     if ScannedBroad: #slightly more efficient "where am I" scan
-        FindZFocus(ZCoord='narrow') #recursive doesn't return anything
+        ZFocus, BestFrame = FindZFocus(ZCoord='narrow') #recursive needs to return 
         
     
     return (ZFocus,BestFrame)
