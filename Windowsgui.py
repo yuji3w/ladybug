@@ -343,6 +343,14 @@ def CircleDemo(cap, speed=500): #finds outline, focuses, goes around edge
     #Arc shape. Move back a bit to center around edge. 
     return (xc, yc, r)
 
+def MakeArc(XCenter,YCenter,Radius, Z=-1, speed=500):
+    #part of demo for going around a coin's edge, I want to call this to see
+    #if I can use ICE video feature to stitch about 50 times faster
+    if Z==-1:
+        Z=GlobalZ
+    MoveConfirmSnap(XCenter,YCenter-(Radius-2), Z, cap)
+    SendGCode("G2 I0 J{} F{}".format(Radius-1.5,speed))
+
 def is_dark(img, thrshld = 15):
     is_dark = np.mean(img) < thrshld
     return is_dark
@@ -453,7 +461,7 @@ def AutoCoin(cap,
             xfocus, yfocus = point[0], point[1]
             MoveConfirmSnap(xfocus,yfocus, BasicHeight, cap)
             
-            FocusHeight, CoinFocusPic = FindZFocus(ZHeights) #Future: analyze subimage
+            FocusHeight, CoinFocusPic = FindZFocus(ZHeights,Comprehensive=True) #Future: analyze subimage
 
             if FocusHeight <= BuildPlate + 0.1: #too close, another false positive
                 print('False Positive, focus height at {}, bottom surface at {}'.format(FocusHeight,BuildPlate))
@@ -1420,8 +1428,9 @@ def FindZFocus(ZCoord='broad', Comprehensive = False,
         else:
             frames.insert(0,frame)
             blurs.insert(0,blur)
+            TrueMax = blurs.index(max(blurs)) #(more spaghetti) THIS WAS ONE LINE DOWN UNDER IF COMPREHENSIVE
             if Comprehensive == False and i > 2: #arrest search if overshoot focus point    
-                TrueMax = blurs.index(max(blurs)) #(more spaghetti)
+                
                 #print('TrueMax is {}'.format(TrueMax))
                 if TrueMax > 2: #going down. don't worry about absolutes
                     if (blurs[TrueMax] > 100) and (blurs[TrueMax] > blurs[TrueMax - 1]) and (blurs[TrueMax-1] > blurs[TrueMax-2]):
