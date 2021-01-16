@@ -369,8 +369,6 @@ def TryToConnect(port, BAUD, timeout):
 
     except serial.serialutil.SerialException:
         return False
-
-    #return False
     
 def UpdateFocusDict(FocusDictionary, location, pic):
     #used to allow threaded calculation of focus during time waits
