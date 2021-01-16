@@ -96,6 +96,7 @@ LittleZ = 0.1 #maybe even too big but can be played with
 
 win = tk.Tk()
 myFont = tk.font.Font(family='Helvetica', size=12, weight='bold')
+mySmallFont = tk.font.Font(family='Helvetica', size=9, weight='bold')
 myBigFont = tk.font.Font(family='Helvetica', size=20,weight='bold')
 font.families()
 
@@ -512,26 +513,25 @@ def AutoCoin(cap,
         MoveConfirmSnap(XMiddle,YMiddle,GlobalZ,cap)
         BasicHeight, MiddlePic = FindZFocus()
 
+        if BasicHeight <= BuildPlate + 0.1: #too close, another false positive
+            print('False Positive, focus height at {}, bottom surface at {}'.format(BasicHeight,BuildPlate))
+            continue
+        
         low = (BasicHeight - ((MaxFocusPoints//2) * DepthOfField))
         high = (BasicHeight + ((MaxFocusPoints//2) * DepthOfField))
         ZHeights = GenerateZ(low,high,DepthOfField)
         FocusSet = set()
-                
         
-        for point in XYFocusPoints: #places to check focus
 
-            FalsePositive = False
+        for point in XYFocusPoints: #places to check focus
             
             xfocus, yfocus = point[0], point[1]
             MoveConfirmSnap(xfocus,yfocus, BasicHeight, cap)
             
             FocusHeight, CoinFocusPic = FindZFocus(ZHeights,Comprehensive=True) #Future: analyze subimage
 
-            if FocusHeight <= BuildPlate + 0.1: #too close, another false positive
-                print('False Positive, focus height at {}, bottom surface at {}'.format(FocusHeight,BuildPlate))
-                FalsePositive = True
-                break
-            elif is_dark(CoinFocusPic): #prevent focusing on edges
+
+            if is_dark(CoinFocusPic): #prevent focusing on edges
                 print("off the edge AKA dark pic, don't count this one")
                 continue
             
@@ -539,9 +539,7 @@ def AutoCoin(cap,
             FocusSet.add(FocusHeight) #Future: Make sure it's not too many images, or use best ones
             
             #Add to FocusDictionary here
-            
-        if FalsePositive:
-            continue
+
         
         FocusList = sorted(list(FocusSet))
 
@@ -1956,7 +1954,9 @@ def InitiatePCBTools():
     
     return designators, columns, rows, PathChoice
     
-
+def StartAutoCoin():
+    #for tkinter
+    AutoCoin(cap)
 
 def ShortestPath(ListOfCoordinateTuples):
     #just calls tsp (traveling salesman problem) module
@@ -2129,8 +2129,8 @@ HomeYButton.pack(side = tk.BOTTOM,pady=5)
 HomeZButton = tk.Button(BottomFrame, text = "HOME Z", font = myFont, command = HomeZ, height = 2, width =8 )
 HomeZButton.pack(side = tk.BOTTOM,pady=5)
 
-ShowCameraButton = tk.Button(BottomFrame, text = "CAM", font = myBigFont, command = StartThreadedCamera, height = 1, width = 10)
-ShowCameraButton.pack(side = tk.BOTTOM, pady=5)
+AutoCoinButton = tk.Button(BottomFrame, text = "AUTOCOIN", font = mySmallFont, command = StartAutoCoin, height = 1, width = 15)
+AutoCoinButton.pack(side = tk.BOTTOM, pady=5)
 
 
 
