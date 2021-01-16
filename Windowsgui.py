@@ -36,6 +36,7 @@ import tsp #traveling salesman module. Requires pandas. Really slow
 import utils.track_ball as ObjectTracker 
 import utils.findcolors as findcolors #for object tracking with color
 import circlify #for calculating evenly spaced points within circle for autofocus
+import serial.tools.list_ports
 
 #dictionary passed into gridscan. At minimum must change
 #scanlocations! Can be made with definescan
@@ -92,8 +93,6 @@ ZSpeed = 1000
 
 BigZ = 2
 LittleZ = 0.1 #maybe even too big but can be played with
-
-timeout = 0.1 #default timeout for serial, important for GetPositions
 
 win = tk.Tk()
 myFont = tk.font.Font(family='Helvetica', size=12, weight='bold')
@@ -155,7 +154,10 @@ def SendGCode(GCode,machine='ladybug'):
     machine.write(BytesGCode)
     #time.sleep(0.02) #this is for potential conflicts of calling gcodes too fast
 
-def EngageSteppers():
+def EngageSteppers(machine = 'ladybug'):
+    if machine == 'ladybug':
+        machine = LadyBug
+        
     SendGCode("M84 S36000") #tells it not to turn off motors for S seconds (default 60 grr)
     time.sleep(0.05)
     SendGCode("M302 P1") #PREVENTS ERRORS FROM 'cold' EXTRUSION
@@ -164,7 +166,9 @@ def EngageSteppers():
     #time.sleep(0.05) #disabled for NANO. uncomment if Z too slow
     SendGCode("M17") #engage steppers
 
-def TurnOnFan(speed=250): #up to 250, adjust if shrieking
+def TurnOnFan(speed=250, machine = 'ladybug'): #up to 250, adjust if shrieking
+    if machine == 'ladybug':
+        machine = LadyBug
     gcode = "M106 S" + str(speed)
     SendGCode(gcode)
 
@@ -269,43 +273,105 @@ def WaitForConfirmMovements(X,Y,Z,attempts=100): #50 is several seconds
     print('exceeded allotted {} attempts. USB disconnect?'.format(attempts))
     return False
 
-def RestartSerial(port=8, BAUD = 115200,timeout=timeout):
+def RestartSerial(port= -1, BAUD = -1,timeout=1):
 
-    global LadyBug #below functions expect this global, whoops
+    PossibleBauds = (115200, 9600) #expand as more options are known
 
-    if (not isinstance(port,int)) or (not isinstance(BAUD,int)):
-         print ('please specify CNC port and/or BAUD rate (example: 6 , 115200)')
+    FoundMachine = False
+    
+    global LadyBug #below functions expect this global
 
-    while True:
-        time.sleep(0.01)
+    try:
+        CloseSerial() #will pass if no port by ladybug name open
+    except Exception: #if LadyBug turned out to be a boolean or something
+        pass
 
-        try:
-            CloseSerial() #will pass if no port by ladybug name open
+    if port != -1 and BAUD !=-1: #try given parameters first
 
-            LadyBug = serial.Serial('COM' + str(port), BAUD,timeout=timeout)
-            time.sleep(1)
-            EngageSteppers()
-            time.sleep(1)
-            #TurnOnFan()
-            #time.sleep(1.5)
-            return LadyBug #name of controllable CNC machine
+        while True:
 
-        except Exception: #SerialException is proper but not working
-
-            print ('unable to connect to port {}, BAUD {}, sacrifice a goat or whatever to fix it'.format(port,BAUD))
-            inputstr = input('please specify CNC port and/or BAUD rate (example: 6 , 115200) to try?')
-            inputs = inputstr.split(',')
-
-            if len(inputs) == 2: #There's got to be a better way!
-                port = inputs[0]
-                BAUD = inputs[1]
-
-            elif len(inputs) == 1 and inputs[0].isdigit():
-                port = inputs[0]
+            time.sleep(0.01)
+            LadyBug = TryToConnect(port,BAUD, timeout=timeout)
+            if LadyBug:
+                FoundMachine=True
+                break
             else:
-                print('Failed to connect.')
-                return None
+                print('Failed to connect with port {}, BAUD {}'.format(port,BAUD))
+                inputstr = input("""
 
+You may try to specify a port and BAUD rate or just a port.
+Examples: '6, 115200' or just '8' (no quotes).
+Or press enter to try all available ports automatically.
+'q' to quit. """)
+
+                inputs = inputstr.split(',')
+
+                if len(inputs) == 2: #There's got to be a better way!
+                    port = int(inputs[0])
+                    BAUD = int(inputs[1])
+
+                elif len(inputs) == 1 and inputs[0].isdigit():
+                    port = int(inputs[0])
+
+                elif inputs[0].lower() == 'q':
+                    print("Sorry you're having trouble.")
+                    return False
+                
+                else:
+                    break #and try to automatically connect
+
+    if not FoundMachine:
+        #find and search automatically
+        ports = []
+        for i in serial.tools.list_ports.comports():
+            ports.append(str(i).split(" ")[0])
+        PortsAndBauds = [[a, b] for a in ports for b in PossibleBauds if a != b] 
+        for val in PortsAndBauds: #zipped together so we only need one break 
+            port, BAUD = val[0],val[1]
+            LadyBug = TryToConnect(port,BAUD,timeout)
+            if LadyBug:
+                FoundMachine = True
+                break
+                
+    if FoundMachine:
+        print('Successful connection on port {} with Baud rate {}'.format(port, BAUD))
+        time.sleep(1)
+        EngageSteppers()
+        time.sleep(1)
+        
+        #TurnOnFan()
+        #time.sleep(1.5)
+        return LadyBug #name of controllable CNC machine
+
+    else:
+        print("Unable to connect. Um... jiggle the cables?")
+        
+def TryToConnect(port, BAUD, timeout):
+    global LadyBug
+
+    if isinstance(port, str):
+        if 'COM' not in port:
+            port = 'COM' + port
+            
+    elif isinstance(port, int):
+        port = 'COM' + str(port)
+    else:
+        print('invalid connection parameters')
+        return False
+
+    print("trying to connect with port {} and BAUD {}...".
+                    format(port, BAUD))
+    try:
+        LadyBug = serial.Serial(port, BAUD, timeout=timeout)
+        time.sleep(1)
+        if LadyBug:
+            return LadyBug
+
+    except serial.serialutil.SerialException:
+        return False
+
+    #return False
+    
 def UpdateFocusDict(FocusDictionary, location, pic):
     #used to allow threaded calculation of focus during time waits
     blur = CalculateBlur(pic)
@@ -989,6 +1055,7 @@ def RotateScan(ScanLocations, degrees = 30):
 
 #all assumes cv2 here
 def StartCamera(camera = 1, Width = 640, Height = 480):
+    #Assumes using laptop --- which already has a camera. Change to 0 otherwise
 
     cap = cv2.VideoCapture(camera)
     cap.set(3,Width)
