@@ -274,7 +274,7 @@ def WaitForConfirmMovements(X,Y,Z,attempts=100): #50 is several seconds
     print('exceeded allotted {} attempts. USB disconnect?'.format(attempts))
     return False
 
-def RestartSerial(port= -1, BAUD = -1,timeout=1):
+def RestartSerial(port= -1, BAUD = -1,timeout=0.1):
 
     PossibleBauds = (115200, 9600) #expand as more options are known
 
@@ -408,13 +408,17 @@ def CircleDemo(cap, speed=500): #finds outline, focuses, goes around edge
     #Arc shape. Move back a bit to center around edge. 
     return (xc, yc, r)
 
-def MakeArc(XCenter,YCenter,Radius, Z=-1, speed=500):
+def MakeArc(XCenter,YCenter,Radius, Z=-1, speed='default'):
     #part of demo for going around a coin's edge, I want to call this to see
     #if I can use ICE video feature to stitch about 50 times faster
     if Z==-1:
         Z=GlobalZ
+    if speed == 'default':
+        speed = Radius * 100 #takes about 3.14159 seconds or so
     MoveConfirmSnap(XCenter,YCenter-(Radius-2), Z, cap)
     SendGCode("G2 I0 J{} F{}".format(Radius-1.5,speed))
+    time.sleep(speed/800) #otherwise MoveConfirmSnap will timeout
+    MoveConfirmSnap(XCenter,YCenter-(Radius-2),Z,cap)
 
 def is_dark(img, thrshld = 15):
     is_dark = np.mean(img) < thrshld
@@ -448,7 +452,7 @@ def AutoCoin(cap,
              FirstRadius = 10,
              SaveLocation = "AutoCoin\\",
              FocusDictionary = {},
-             AcceptableBlur = 50):
+             AcceptableBlur = 50, DrawCoolArc = True):
     #This will do a search pattern and when it finds a coin it will
     #automatically calculate the radius of the coin
     #and scan it within autofocused-determined parameter
@@ -516,13 +520,15 @@ def AutoCoin(cap,
         if BasicHeight <= BuildPlate + 0.1: #too close, another false positive
             print('False Positive, focus height at {}, bottom surface at {}'.format(BasicHeight,BuildPlate))
             continue
+
+        if DrawCoolArc: #this does absolutely nothing useful
+            MakeArc(XMiddle,YMiddle,Radius)
         
         low = (BasicHeight - ((MaxFocusPoints//2) * DepthOfField))
         high = (BasicHeight + ((MaxFocusPoints//2) * DepthOfField))
         ZHeights = GenerateZ(low,high,DepthOfField)
         FocusSet = set()
         
-
         for point in XYFocusPoints: #places to check focus
             
             xfocus, yfocus = point[0], point[1]
