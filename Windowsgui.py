@@ -1078,8 +1078,12 @@ def TakePicture(cap):
 
     return frame
 
-def SavePicture(name,frame):
+def SavePicture(name,frame): #name includes locations and extension
+    folder = os.path.dirname(name)
 
+    if not os.path.exists(folder):
+        os.makedirs(folder)
+        
     cv2.imwrite(name,frame)
     
 def CloseCamera(cap):
@@ -1109,11 +1113,13 @@ def MoveFromClick(event,x,y,flags,param):
         KeepBugInCenter(x,y,PixelsPerUnit=PixelsPerUnit)
 
 '''     
-def ShowCamera(cap=False,camera_choice=1,
+def ShowCamera(cap=False,camera_choice=1,SavePath = "capture\\",
+               StackPath = "capture\\stacked\\",
                TrackTheBug=False,Width=640,Height=480):
     #best to call this with threading so you can use other gui controls 
     #though really they should be integrated together.
     #or some other third smaller solution
+    
     
     if cap == False: #else pass in an explicit cap
         cap = cv2.VideoCapture(camera_choice) #default 1 if on laptop with webcam
@@ -1140,17 +1146,39 @@ def ShowCamera(cap=False,camera_choice=1,
     
     ColorLower, ColorUpper = ColorLowers[ColorsIndex],ColorUppers[ColorsIndex]
 
+    #Show stacked pics taken from out of main loop
+    if not os.path.exists(StackPath):
+        os.makedirs(StackPath)
+    StackedPics = [os.path.join(StackPath, fn) for fn in next(os.walk(StackPath))[2] if ".jpg" in fn]    
+    #StackedPics = [os.path.abspath(x) for x in os.listdir(StackPath) if '.jpg' in x]
+    SCount = 0 #Check only every few seconds to save resources 
     while True:
         ret, frame = cap.read()
         np.resize(frame,(Width,Height,3)) #just force it    
         if not ret:
             break
+        
+        SCount +=1 #this next block is for loading any stacked files
+        if SCount % 50:
+
+            TempStacked = [os.path.join(StackPath, fn) for fn in next(os.walk(StackPath))[2] if ".jpg" in fn]
+            NewPics = list(list(set(StackedPics)-set(TempStacked)) + list(set(TempStacked)-set(StackedPics)))
+            if NewPics:
+                StackedPics = TempStacked
+                for pic in NewPics:
+                    name = os.path.basename(pic)
+                    loadpic = cv2.imread(pic)
+                    cv2.imshow(name,loadpic)
+                    
+            SCount = 1 #Avoid eventually reaching like a billion
+
+    
         #cv2.setMouseCallback(DefaultName,MoveFromClick)#possibly bad looped
         k = cv2.waitKey(30)
         
         if k%256 == 32: #this and video capture now before frame modification
             # SPACE pressed take picture
-            img_name = "capture\\" + MakeNameFromPositions(GlobalX,GlobalY,GlobalZ,GlobalR,'.jpg') 
+            img_name = SavePath + MakeNameFromPositions(GlobalX,GlobalY,GlobalZ,GlobalR,'.jpg') 
             if img_name == prev_img_name:
                 counter+=1
                 img_name = str(counter) + img_name
@@ -1206,7 +1234,7 @@ def ShowCamera(cap=False,camera_choice=1,
                 del out
             except NameError: 
                 #VideoName = time.asctime().replace(" ","") + '.avi'
-                VideoName = "capture\\" + MakeNameFromPositions(GlobalX,GlobalY,GlobalZ,GlobalR,'.mp4')
+                VideoName = SavePath + "Vid starting at " + MakeNameFromPositions(GlobalX,GlobalY,GlobalZ,GlobalR,'.mp4')
                 out = cv2.VideoWriter(VideoName,cv2.VideoWriter_fourcc('H','2','6','4'), 20, shape(frame)[1::-1])
                 print('Starting video capture')
         
@@ -1321,15 +1349,17 @@ def DefaultStack(pics = 20, stepsize = 0.1,
     
     if center == 'default':
         center = GlobalZ
-    low = center - (pics//2 * stepsize)
-    high = center + (pics//2 * stepsize)
-    ZCoord = GenerateZ(low,high, stepsize)
+    low = round(center - (pics//2 * stepsize),1)
+    high = round(center + (pics//2 * stepsize),1)
+    ZCoord = GenerateZ(low if low >=0 else 0 ,high, stepsize)
 
     stacked, allframes = ZStackKinda(ZCoord,subdiv_dims = dims)
-    name = "Stacked from {} to {} at X {}, Y{}.jpg".format(low,high,GlobalX,GlobalY)
-    ShowPicture(stacked) #how to make this show from seperate thread?
+    name = "Capture\\Stacked\\{} to {} at X {}, Y {}.jpg".format(low,high,GlobalX,GlobalY)
+    #ShowPicture(stacked) #how to make this show from seperate thread?
     SavePicture(name,stacked)
-
+    #loadimg = cv2.imread(name)
+    #ShowPicture(loadimg)
+    
 def ZStackKinda(ZCoord, subdiv_dims = (4,4),
                 camera='default', X=-1, Y=-1):
     """takes pictures at ZCoord and then can call max_pool_subdivided_images
