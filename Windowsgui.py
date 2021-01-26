@@ -180,6 +180,7 @@ def GetPositions(machine = 'ladybug',timeout=1):
     #returns dictionary X,Y,Z and maybe R of actual position at time of request
     #this is the most likely function to be culprit if movement works but scan doesn't
     #Originally meant for normal cartesian marlin
+    #This is one of the points of failures, for sure...
     
     sleeptime = 0.05 #can I calculate things in other threads during this time? 
     
@@ -189,7 +190,7 @@ def GetPositions(machine = 'ladybug',timeout=1):
     previous_buffer = machine.read_all() #clear buffer essentially
     LadyBug.reset_input_buffer() #possible fix attempt 1122021
     previous_buffer = machine.read_all() #someone said do this twice
-
+    
     SendGCode("M114") #report machine status
     
     time.sleep(sleeptime)
@@ -200,34 +201,34 @@ def GetPositions(machine = 'ladybug',timeout=1):
         
         except serial.SerialTimeoutException(): #other exceptions found here
         
-            print('timeout')
+            print('Serial Timeout Exception') #This NEVER is what gets tripped. 
             return False
 
             #print('no dump. communication ERROR')
         
         if 'Count' in dump: #precedes actual position data
-    
-            remainder = dump[dump.find('Count'):] #has actual position
+            try:
+                remainder = dump[dump.find('Count'):] #has actual position
             
-            Xraw = remainder[remainder.find('X:'):remainder.find('Y')]
-            Yraw = remainder[remainder.find('Y:'):remainder.find('Z')]
-            Zraw = remainder[remainder.find('Z:'):(remainder.find('E') if 'E' in remainder else None)] #E sometimes in remainderadded for Nano
+                Xraw = remainder[remainder.find('X:'):remainder.find('Y')]
+                Yraw = remainder[remainder.find('Y:'):remainder.find('Z')]
+                Zraw = remainder[remainder.find('Z:'):(remainder.find('E') if 'E' in remainder else None)] #E sometimes in remainderadded for Nano
 
-            X = float(''.join([s for s in Xraw if (s.isdigit() or s == '.')]).strip())
-            Y = float(''.join([s for s in Yraw if (s.isdigit() or s == '.')]).strip())
-            Z = float(''.join([s for s in Zraw if (s.isdigit() or s == '.')]).strip())
+                X = float(''.join([s for s in Xraw if (s.isdigit() or s == '.')]).strip())
+                Y = float(''.join([s for s in Yraw if (s.isdigit() or s == '.')]).strip())
+                Z = float(''.join([s for s in Zraw if (s.isdigit() or s == '.')]).strip())
 
-            positions = {'X':X,'Y':Y,'Z':Z,'delay':i*sleeptime,'raw':dump,'prev':previous_buffer}
+                positions = {'X':X,'Y':Y,'Z':Z,'delay':i*sleeptime,'raw':dump,'prev':previous_buffer}
 
-            return positions
-            
-        
-            
+                return positions
+            except Exception:
+                print('If this gets printed at fail, go here')
+                return False
         time.sleep(sleeptime) #and loop back to try again
 
     if not dump:
-            #This is the big unsolved problem. Why did the connection break?
-            return(False)
+            #This is one big unsolved problem. Why did the connection break?
+            return False
 
 def CheckTriggered(LadyBug): #superceded by just making homing slow 
         junk = LadyBug.read()
@@ -255,15 +256,15 @@ def WaitForConfirmMovements(X,Y,Z,attempts=100): #50 is several seconds
             
         if positions:
             
-            if (math.isclose(X,positions['X'],abs_tol=0.04) #microns getting lost
-                and math.isclose(Y,positions['Y'],abs_tol=0.04)
-                and math.isclose(Z,positions['Z'],abs_tol=0.04)
+            if (math.isclose(X,positions['X'],abs_tol=0.1) #microns getting lost
+                and math.isclose(Y,positions['Y'],abs_tol=0.1)
+                and math.isclose(Z,positions['Z'],abs_tol=0.1)
                 ):
                 
                 return positions #we have arrived
             else:
     
-                if j > 0 and PositionsList[j-1] == PositionsList[j]:
+                if j > 15 and PositionsList[j] == PositionsList[j-14]:
                     print('Printer not moving, but not at destination? check inputs')
                     
                     return False # Different failure condition than unable to communicate. Bad inputs
@@ -271,6 +272,7 @@ def WaitForConfirmMovements(X,Y,Z,attempts=100): #50 is several seconds
                 continue
             
     #exceeded allotted attempts. This is a COMMUNICATION issue! WHYYYYY
+    #update 1/16/2021 WHYYYYYYYYY
     print('exceeded allotted {} attempts. USB disconnect?'.format(attempts))
     return False
 
@@ -430,13 +432,15 @@ def FoundCoin(pic, threshold = 50):
     #It assumes we're focused on the build plate! Ridiculous!
     #And yet, this is WAY more robust than the last method.
     #amended: if brightness very low, darkness is used as metric instead
-    #This is not extremely robust but helps if using highly polarized light
+    #helps if using highly polarized light
 
     if is_dark(pic): #light = coin if brightness very low
         CoinScore = threshold + 1
     else:
         CoinScore = CalculateBlur(pic)
-        
+
+    Coinscore = round(CoinScore,1)
+    
     if CoinScore < threshold:
         return True, CoinScore
     else:
@@ -448,7 +452,7 @@ def AutoCoin(cap,
              SearchZMin = 0,SearchZMax = 5,
              FieldOfView = 1.6, FocusPoints = 7,
              MaxFocusPoints = 10,
-             DepthOfField = 0.05, 
+             DepthOfField = 0.1, #0.05 for high res 
              FirstRadius = 10,
              SaveLocation = "AutoCoin\\",
              FocusDictionary = {},
@@ -559,7 +563,7 @@ def AutoCoin(cap,
                                    FocusHeight, FocusHeight,
                                    1, 1, XMovement,YMovement, 1, 1)
         
-        ScanLocations = GridToCircle(GridLocations,XMiddle,YMiddle,Radius) 
+        ScanLocations = GridToCircle(GridLocations,XMiddle,YMiddle,Radius)  
         ScanLocations = InterlaceZ(ScanLocations,ZCoord = FocusList)
         FullLocations = InterlaceZ(GridLocations,ZCoord=FocusList)
         
@@ -583,6 +587,7 @@ def AutoCoin(cap,
             DefaultScan['Start Time'] = time.time()
             DefaultScan['Restarted Scan'] = True
             GridScan(DefaultScan)
+
             print('This coin is done')
             print('Saving missing files...')
             
@@ -1119,7 +1124,9 @@ def ShowCamera(cap=False,camera_choice=1,
     initBB = None
     
     prev_img_name = 'im an image'
-    DefaultName = "space to snap, esc to escape, f toggles color track and c the color, s draw bounding box, b resize, v video"
+    DefaultName = """space to snap, h to home, esc to escape, f autofocuses,
+    j,k,l,i,-,+, to move, t toggles track and c which color,
+    s draw bounding box, b resize video, v starts and stops video"""
     cv2.namedWindow(DefaultName,cv2.WINDOW_NORMAL) #resize
     cv2.resizeWindow(DefaultName, Width,Height) #small better for preview
     
@@ -1179,8 +1186,13 @@ def ShowCamera(cap=False,camera_choice=1,
         if k%256 == ord('f'): #AutoFocus
             y = threading.Thread(target=FindZFocus) #update image during
             y.start()
+        if k%256 == ord('d'): #super basic autostack for testing
+            StackThread = threading.Thread(target=DefaultStack)
+            StackThread.start() #update picture during
             
-        
+        if k%256 == ord('h'):
+            Home()
+            
         if k%256 == ord('c'): #toggle color choice
             ColorsIndex +=1
             if ColorsIndex == NumberOfColors:
@@ -1303,13 +1315,30 @@ def KeepBugInCenter(ObjectX,ObjectY,PixelsPerUnit = 200, Width = 640,
         AllGoTo(XFinal,YFinal,GlobalZ,update=False, speed=speed) #not waiting for update yet
 
     return XFinal,YFinal
+
+def DefaultStack(pics = 20, stepsize = 0.1,
+                 dims = (16,16), center = 'default'):
     
+    if center == 'default':
+        center = GlobalZ
+    low = center - (pics//2 * stepsize)
+    high = center + (pics//2 * stepsize)
+    ZCoord = GenerateZ(low,high, stepsize)
+
+    stacked, allframes = ZStackKinda(ZCoord,subdiv_dims = dims)
+    name = "Stacked from {} to {} at X {}, Y{}.jpg".format(low,high,GlobalX,GlobalY)
+    ShowPicture(stacked) #how to make this show from seperate thread?
+    SavePicture(name,stacked)
+
 def ZStackKinda(ZCoord, subdiv_dims = (4,4),
-                camera='default'):
+                camera='default', X=-1, Y=-1):
     """takes pictures at ZCoord and then can call max_pool_subdivided_images
     with desired chunking amount and finally returns fakestacked image"""
 
-    
+    if X==-1:
+        X = GlobalX
+    if Y== -1:
+        Y = GlobalY
 
     if camera == 'default':
         camera = cap #still don't know the best way to say this
@@ -1319,15 +1348,7 @@ def ZStackKinda(ZCoord, subdiv_dims = (4,4),
         ZCoord.reverse()
     
     for Z in ZCoord: #ZCoord list of Z values to go to
-        ZGoTo(Z)
-        while True:
-            positions = GetPositions()
-            if positions and positions['Z'] == Z: #我们到了
-                break
-            else:
-                time.sleep(0.05)
-        time.sleep(0.05) #vibration control
-        frame = TakePicture(camera)
+        frame = MoveConfirmSnap(GlobalX,GlobalY,Z,cap)
         frames.append(frame)
     
     Stacked = max_pool_subdivided_images(frames, subdiv_dims)
@@ -1489,7 +1510,7 @@ def FindZFocus(ZCoord='broad', Comprehensive = False,
             frames.append(frame)
             blurs.append(blur)
             if Comprehensive == False and i >= 2: #arrest search if overshoot focus point    
-                if (blurs[i-2] > 100) and (blurs[i] < blurs [i-1]) and (blurs[i-1] < blurs[i-2]):
+                if (blurs[i-2] > 50) and (blurs[i] < blurs [i-1]) and (blurs[i-1] < blurs[i-2]):
                     break
                 #elif (blurs[i] < 50) and (blurs[i] < blurs[i-1]) and (blurs[i-1] < blurs[i-2]): #going wrong way
                 #    break
@@ -1502,7 +1523,7 @@ def FindZFocus(ZCoord='broad', Comprehensive = False,
                 
                 #print('TrueMax is {}'.format(TrueMax))
                 if TrueMax > 2: #going down. don't worry about absolutes
-                    if (blurs[TrueMax] > 100) and (blurs[TrueMax] > blurs[TrueMax - 1]) and (blurs[TrueMax-1] > blurs[TrueMax-2]):
+                    if (blurs[TrueMax] > 50) and (blurs[TrueMax] > blurs[TrueMax - 1]) and (blurs[TrueMax-1] > blurs[TrueMax-2]):
                         break
                     #elif (blurs[TrueMax] < 50) and (blurs[TrueMax] > blurs[TrueMax -1]) and (blurs[TrueMax-1] > blurs[TrueMax-2]):
                     #      break
@@ -1755,9 +1776,9 @@ def ZGoTo(ZDest,speed = 1000):
     
     ZPosition.configure(text="Z: "+str(GlobalZ) + "/" + str(ZMax))    
 
-def AllGoTo(XDest=-1,YDest=-1,ZDest=-1,RDest=-1,speed = 3000,update=True,
+def AllGoTo(XDest=-1,YDest=-1,ZDest=-1,RDest=-1,speed = 3000,update=False,
             ): 
-    
+    #set update to True or False to update or not Tkinter (can mess up threads)    
     global GlobalX,GlobalY,GlobalZ,GlobalR
 
 
@@ -1873,15 +1894,23 @@ def ZGet(event):
 def HomeX():
     global GlobalX
 
+    SendGCode('M203 X30') #this alone changes things so much
+    
     SendGCode('G28 X')
+
+    SendGCode('M203 X80') #and make it an okay speed again
+
 
     GlobalX = 0
     XPosition.configure(text="X: "+str(GlobalX) + "/" + str(XMax))
 
 def HomeY():
     global GlobalY
-
+    SendGCode('M203 Y20') 
+    
     SendGCode('G28 Y')
+
+    SendGCode('M203 Y80')
 
     GlobalY = 0
     YPosition.configure(text="Y: "+str(GlobalY) + "/" + str(YMax))
@@ -1904,11 +1933,11 @@ def Home():
     SendGCode('M203 Y80 X80') #and make it an okay speed again
     
     GlobalZ = 0
-    ZPosition.configure(text="Z: "+str(GlobalZ) + "/" + str(ZMax))
+    #ZPosition.configure(text="Z: "+str(GlobalZ) + "/" + str(ZMax))
     GlobalY = 0
-    YPosition.configure(text="Y: "+str(GlobalY) + "/" + str(YMax))
+    #YPosition.configure(text="Y: "+str(GlobalY) + "/" + str(YMax))
     GlobalX = 0
-    XPosition.configure(text="X: "+str(GlobalX) + "/" + str(XMax))
+    #XPosition.configure(text="X: "+str(GlobalX) + "/" + str(XMax))
 
 def InitiatePCBTools():
     #called by gui and deals with information from pickandplace module
