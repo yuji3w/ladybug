@@ -1,6 +1,6 @@
 # ladybug
 
-LADYBUG is an up to 5-axis motorized microscope made from 3D-printed and inexpensive consumer electronics. The original was made super DIY out of Blu-Ray players, breadboard motor drivers, and a raspberry pi, while a followup version is based off a USB microscope duct-taped to a 3D printer run by GCode through a windows machine:
+LADYBUG is an up to 5-axis motorized digital microscope made from 3D-printed and inexpensive consumer electronics. The original was made super DIY out of Blu-Ray players, breadboard motor drivers, and a raspberry pi, while a followup version is based off a USB microscope duct-taped to a 3D printer run by GCode through a windows machine:
 
 https://hackaday.io/project/169362-ladybug-beefy-3d-printer-motorized-microscope
 
