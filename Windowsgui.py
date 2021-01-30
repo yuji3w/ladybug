@@ -101,17 +101,115 @@ myBigFont = tk.font.Font(family='Helvetica', size=20,weight='bold')
 font.families()
 
 
+def ConvertXYToPixelLocations(X=-1,Y=-1, PixelsPerMM = 370,
+                             ImageXWidth=640,ImageYHeight=480):
+    #Takes an image and tells you where the pixels *would be* if you had
+    #a super gigantic image that encompassed the whole possible build plate
+    #This keeps everyone on same page when image resizes and stuff
+    #remember: Indexing is top left with opencv, but we want it to be bottom left!
+    #We're leaving it at bottom left in this function, but when we smush we have to convert it
+    
+    if X == -1:
+        X = GlobalX
+    if Y == -1:
+        Y = GlobalY
+        
+    ImageXCenter = int(X * PixelsPerMM)
+    ImageXLow = int(ImageXCenter - (ImageXWidth/2))
+    ImageXHigh = int(ImageXCenter + (ImageXWidth/2))
+
+    ImageYCenter = int(Y * PixelsPerMM)
+    ImageYLow = int(ImageYCenter - (ImageYHeight/2))
+    ImageYHigh = int(ImageYCenter + (ImageYHeight/2))
+
+    return ImageXLow,ImageXHigh,ImageYLow,ImageYHigh
+
+    
+
+def GoToSmush(MajorImage,
+              X=-1,Y=-1,Z=-1,
+              PixelsPerMM = 370,
+              CanvasXMin=0,CanvasYMin=0,
+              CanvasXMax=40,CanvasYMax=40,
+              ImageXWidth=640,ImageYHeight=480):
+    #Smushes images together. Assumes MajorImage is big enough.
+    #note: indexing for images starts from top left, not bottom left 
+    if X== -1:
+        X = GlobalX
+    if Y == -1:
+        Y = GlobalY
+    if Z == -1:
+        Z = GlobalZ
+
+    MinorImage = MoveConfirmSnap(X,Y,Z,cap)
+
+    XLow,XHigh,YLow,YHigh = ConvertXYToPixelLocations(X=X,Y=Y, PixelsPerMM = PixelsPerMM,
+                             ImageXWidth=ImageXWidth,ImageYHeight=ImageYHeight)
+
+    MajorImage = CombineImages(XLow,XHigh,YLow,YHigh,MinorImage,MajorImage)
+    return MajorImage
+
+def CombineImages(XLow,XHigh,YLow,YHigh, MinorImage, MajorImage):
+    #Combines images. CONVERTS FROM BOTTOM LEFT to TOP LEFT positions
+    try:
+        MajorHeight = shape(MajorImage)[0]
+        FlippedYLow = MajorHeight-YLow
+        FlippedYHigh = MajorHeight - YHigh
+        
+        #MajorImage[YLow:YHigh, XLow:XHigh] = MinorImage
+        MajorImage[FlippedYHigh:FlippedYLow, XLow:XHigh] = MinorImage
+        
+    except ValueError: #MajorImage was too small
+        print('The shape of MinorImage is {} and the shape of Major is {}'
+        .format(shape(MinorImage),shape(MajorImage)))
+        #print('YLow is {} YHigh is {}  XLow is {} XHigh is {}'.format(YLow,YHigh,XLow,XHigh))
+        print('You stepped out of bounds. You should really do something about that')
+        #should increase the size of the image
+        #DoubleImage
+        
+    return MajorImage
 
 
-def ConvertStepsToMM (XSteps,YSteps,ZSteps,ESteps, XStepsPerMM=80,YStepsPerMM=80,ZStepsPerMM=400,EStepsPerMM = 33.33):
-    XMM = round(XSteps/XStepsPerMM,4)
-    YMM = round(YSteps/YStepsPerMM,4)
-    ZMM = round(ZSteps/ZStepsPerMM,4)
-    EMM = round(ESteps/EStepsPerMM,4)
+def DoubleImage(ParentImage):
+    #Does the yujie thing and doubles the image
+    pass #lol where do you extend it 
+
+def RemoveBlank(image):
+    #https://stackoverflow.com/questions/13538748/crop-black-edges-with-opencv
+    y_nonzero, x_nonzero, _ = np.nonzero(image)
+    return image[np.min(y_nonzero):np.max(y_nonzero), np.min(x_nonzero):np.max(x_nonzero)]
+
+def SmushDemo(StartX=7.5,StartY=4,StartZ=7.9):
+    MajorImage = MakeGiantImage()
+    Home()
+    time.sleep(3)
     
-    #consider having a residual counter?
-    
-    return (XMM,YMM,ZMM,EMM)
+    MoveConfirmSnap(StartX,StartY,StartZ,cap)
+    for i in range(10):
+        for j in range(10):
+            X,Y,Z = StartX + i, StartY + j, StartZ
+            MajorImage = GoToSmush(MajorImage,X,Y,Z)
+            time.sleep(0.15)
+
+    name = "capture\\test at X {}, Y {}.jpg".format(str(X),str(Y))
+
+    #MajorImage = RemoveBlank(MajorImage) #EXPENSIVE
+    SavePicture(name,MajorImage) #expensive if large
+
+def MakeGiantImage(PixelsPerMM = 370,
+                        BaseWidth = 640, BaseHeight = 480,
+                        CanvasXMin = 0, CanvasYMin = 0,
+                        CanvasXMax = 40, CanvasYMax = 40):
+    #Will initialize a HUGE blank image to encompass the maximum possible search area
+    #And which will then have real image information filled in
+    #Because Yujie says that it's more efficient to do this than to expand on command
+    XPixels = round(PixelsPerMM * (CanvasXMax - CanvasXMin))
+    YPixels = round(PixelsPerMM * (CanvasYMax - CanvasYMin))
+    YujieImage = np.zeros((YPixels,XPixels,3), np.uint8) #square image because plate is square, surprise!
+    return YujieImage
+                        
+
+
 
 def GenerateCode(X,Y,Z,E, speed = 2000): 
     
@@ -176,7 +274,7 @@ def TurnOnFan(speed=250, machine = 'ladybug'): #up to 250, adjust if shrieking
 def DisengageSteppers():
     SendGCode("M18")
 
-def GetPositions(machine = 'ladybug',timeout=1):
+def GetPositions(machine = 'ladybug',tries=1):
     #returns dictionary X,Y,Z and maybe R of actual position at time of request
     #this is the most likely function to be culprit if movement works but scan doesn't
     #Originally meant for normal cartesian marlin
@@ -195,7 +293,7 @@ def GetPositions(machine = 'ladybug',timeout=1):
     
     time.sleep(sleeptime)
     
-    for i in range (timeout): #communication back and forth not instant, i for failsafe
+    for i in range (tries): #communication back and forth not instant, i for failsafe
         try:
             dump = machine.read_until().decode('utf-8') #kept in bytes. read_all inconsistent
         
@@ -223,6 +321,9 @@ def GetPositions(machine = 'ladybug',timeout=1):
                 return positions
             except Exception:
                 print('If this gets printed at fail, go here')
+                print('XRaw: {}').format(Xraw)
+                print('YRaw: {}').format(Yraw)
+                print('ZRaw: {}').format(Zraw)
                 return False
         time.sleep(sleeptime) #and loop back to try again
 
@@ -236,7 +337,7 @@ def CheckTriggered(LadyBug): #superceded by just making homing slow
         SendGCode("M119")
         data = LadyBug.read()
         return ("Something to do with this data")
-        
+
 
 def WaitForConfirmMovements(X,Y,Z,attempts=100): #50 is several seconds
     #should make it based around predicted amount of time; fails in unusual slow scans 
@@ -276,7 +377,7 @@ def WaitForConfirmMovements(X,Y,Z,attempts=100): #50 is several seconds
     print('exceeded allotted {} attempts. USB disconnect?'.format(attempts))
     return False
 
-def RestartSerial(port= -1, BAUD = -1,timeout=0.1):
+def RestartSerial(port= -1, BAUD = -1,timeout=1): #from 0.1 to 1 for timeout test
 
     PossibleBauds = (115200, 9600) #expand as more options are known
 
@@ -364,7 +465,7 @@ def TryToConnect(port, BAUD, timeout):
 
     print("trying to connect with port {} and BAUD {}...".
                     format(port, BAUD))
-    try:
+    try: 
         LadyBug = serial.Serial(port, BAUD, timeout=timeout)
         time.sleep(1)
         if LadyBug:
@@ -1113,9 +1214,10 @@ def MoveFromClick(event,x,y,flags,param):
         KeepBugInCenter(x,y,PixelsPerUnit=PixelsPerUnit)
 
 '''     
-def ShowCamera(cap=False,camera_choice=1,SavePath = "capture\\",
+def ShowCamera(cap=False,camera_choice=1,TrackTheBug=False,
+               SavePath = "capture\\",
                StackPath = "capture\\stacked\\",
-               TrackTheBug=False,Width=640,Height=480):
+               Width=640,Height=480):
     #best to call this with threading so you can use other gui controls 
     #though really they should be integrated together.
     #or some other third smaller solution
@@ -1128,9 +1230,8 @@ def ShowCamera(cap=False,camera_choice=1,SavePath = "capture\\",
     fps = None
     BoxTimeout = 0
     initBB = None
-    
     prev_img_name = 'im an image'
-    DefaultName = """space to snap, h to home, esc to escape, f autofocuses,
+    DefaultName = """space to snap, h to home, d autostacks, f autofocuses,
     j,k,l,i,-,+, to move, t toggles track and c which color,
     s draw bounding box, b resize video, v starts and stops video"""
     cv2.namedWindow(DefaultName,cv2.WINDOW_NORMAL) #resize
@@ -1146,12 +1247,11 @@ def ShowCamera(cap=False,camera_choice=1,SavePath = "capture\\",
     
     ColorLower, ColorUpper = ColorLowers[ColorsIndex],ColorUppers[ColorsIndex]
 
-    #Show stacked pics taken from out of main loop
-    if not os.path.exists(StackPath):
+    if not os.path.exists(StackPath): #Show stacked pics taken from out of main loop
         os.makedirs(StackPath)
     StackedPics = [os.path.join(StackPath, fn) for fn in next(os.walk(StackPath))[2] if ".jpg" in fn]    
-    #StackedPics = [os.path.abspath(x) for x in os.listdir(StackPath) if '.jpg' in x]
     SCount = 0 #Check only every few seconds to save resources 
+
     while True:
         ret, frame = cap.read()
         np.resize(frame,(Width,Height,3)) #just force it    
@@ -1160,7 +1260,6 @@ def ShowCamera(cap=False,camera_choice=1,SavePath = "capture\\",
         
         SCount +=1 #this next block is for loading any stacked files
         if SCount % 50:
-
             TempStacked = [os.path.join(StackPath, fn) for fn in next(os.walk(StackPath))[2] if ".jpg" in fn]
             NewPics = list(list(set(StackedPics)-set(TempStacked)) + list(set(TempStacked)-set(StackedPics)))
             if NewPics:
@@ -1170,7 +1269,7 @@ def ShowCamera(cap=False,camera_choice=1,SavePath = "capture\\",
                     loadpic = cv2.imread(pic)
                     cv2.imshow(name,loadpic)
                     
-            SCount = 1 #Avoid eventually reaching like a billion
+            SCount = 1 #Avoid overflow. Stack block over
 
     
         #cv2.setMouseCallback(DefaultName,MoveFromClick)#possibly bad looped
@@ -1178,7 +1277,7 @@ def ShowCamera(cap=False,camera_choice=1,SavePath = "capture\\",
         
         if k%256 == 32: #this and video capture now before frame modification
             # SPACE pressed take picture
-            img_name = SavePath + MakeNameFromPositions(GlobalX,GlobalY,GlobalZ,GlobalR,'.jpg') 
+            img_name = MakeNameFromPositions(GlobalX,GlobalY,GlobalZ,GlobalR,'.jpg') 
             if img_name == prev_img_name:
                 counter+=1
                 img_name = str(counter) + img_name
@@ -1188,8 +1287,9 @@ def ShowCamera(cap=False,camera_choice=1,SavePath = "capture\\",
             
             elif img_name != prev_img_name: 
                 counter = 0            
-
-            cv2.imwrite(img_name, frame)
+            print(SavePath)
+            print(img_name)
+            cv2.imwrite(SavePath + img_name, frame)
             print("{} written!".format(img_name))
             prev_img_name = img_name.lstrip(string.digits) 
 
@@ -1258,6 +1358,7 @@ def ShowCamera(cap=False,camera_choice=1,SavePath = "capture\\",
         
         if k%256 == ord("s"):
             #initiate track by bounded box
+            print("Select slow-moving ROI with cursor to track then hit enter") 
             tracker = cv2.TrackerKCF_create() 
             # press ENTER or SPACE after selecting the ROI)
             initBB = cv2.selectROI(DefaultName, frame, fromCenter=False,
@@ -1353,12 +1454,11 @@ def DefaultStack(pics = 20, stepsize = 0.1,
     high = round(center + (pics//2 * stepsize),1)
     ZCoord = GenerateZ(low if low >=0 else 0 ,high, stepsize)
 
-    stacked, allframes = ZStackKinda(ZCoord,subdiv_dims = dims)
+    stacked, allframes = ZStackKinda(ZCoord,subdiv_dims = dims) #the juicy part
     name = "Capture\\Stacked\\{} to {} at X {}, Y {}.jpg".format(low,high,GlobalX,GlobalY)
-    #ShowPicture(stacked) #how to make this show from seperate thread?
     SavePicture(name,stacked)
-    #loadimg = cv2.imread(name)
-    #ShowPicture(loadimg)
+    ShowPicture(stacked) #if function is seperate thread, pic won't show
+    #solution is to look for new saved files in main thread and load them 
     
 def ZStackKinda(ZCoord, subdiv_dims = (4,4),
                 camera='default', X=-1, Y=-1):
@@ -1381,7 +1481,7 @@ def ZStackKinda(ZCoord, subdiv_dims = (4,4),
         frame = MoveConfirmSnap(GlobalX,GlobalY,Z,cap)
         frames.append(frame)
     
-    Stacked = max_pool_subdivided_images(frames, subdiv_dims)
+    Stacked = max_pool_subdivided_images(frames, subdiv_dims) #actual stacker (thanks yujie!)
 
     return Stacked,frames
 
@@ -1600,6 +1700,8 @@ def ControlDino(setting = "FLCLevel 6"):
 
     subprocess.call('DN_DS_Ctrl.exe ' + setting)    
         
+
+
 
 def MakeFolderFromPositions(X,Y,Z,R,ParentFolder,FileType='.jpg'):
     ZStr = (''.join(filter(lambda i: i.isdigit(), ('{0:.2f}'.format(Z))))).zfill(5)
