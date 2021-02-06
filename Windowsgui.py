@@ -221,6 +221,7 @@ def ConvertPixelToXY(XPix,YPix, PixelsPerMM = 370, debug = True):
 
 def SmushScan(positions, PixelsPerMM = 370):
     #Goes to positions and blindly stitches them together
+
     MajorImage = MakeGiantImage(PixelsPerMM = PixelsPerMM)
 
     XStart = positions['X'][0]
@@ -265,7 +266,6 @@ def MakeGiantImage(PixelsPerMM = 370,
     YPixels = round(PixelsPerMM * (CanvasYMax - CanvasYMin))
     YujieImage = np.zeros((YPixels,XPixels,3), np.uint8) #square image because plate is square, surprise!
     return YujieImage
-                        
 
 
 
@@ -1504,7 +1504,7 @@ def KeepBugInCenter(ObjectX,ObjectY,PixelsPerUnit = 200, Width = 640,
     return XFinal,YFinal
 
 def DefaultStack(pics = 20, stepsize = 0.1,
-                 dims = (16,16), center = 'default'):
+                 dims = (32,32), center = 'default'):
     
     if center == 'default':
         center = GlobalZ
@@ -1512,12 +1512,20 @@ def DefaultStack(pics = 20, stepsize = 0.1,
     high = round(center + (pics//2 * stepsize),1)
     ZCoord = GenerateZ(low if low >=0 else 0 ,high, stepsize)
 
-    stacked, allframes = ZStackKinda(ZCoord,subdiv_dims = dims) #the juicy part
-    name = "Capture\\Stacked\\{} to {} at X {}, Y {}.jpg".format(low,high,GlobalX,GlobalY)
-    SavePicture(name,stacked)
-    ShowPicture(stacked) #if function is seperate thread, pic won't show
-    #solution is to look for new saved files in main thread and load them 
+    stacked, allframes, TrueZ3D = ZStackKinda(ZCoord,subdiv_dims = dims) #the juicy part
     
+    DepthMap = NormalizeZMap(TrueZ3D)
+    
+    name = "Capture\\Stacked\\{} to {} at X {}, Y {}.jpg".format(low,high,GlobalX,GlobalY)
+    DepthName = "Capture\\Stacked\\depth {} to {} at X {}, Y {}.jpg".format(low,high,GlobalX,GlobalY)
+
+    SavePicture(name,stacked)
+    
+    SavePicture(DepthName,DepthMap)
+
+    #ShowPicture(stacked) #if function is seperate thread, pic won't show
+    #solution is to look for new saved files in main thread and load them 
+
 def ZStackKinda(ZCoord, subdiv_dims = (4,4),
                 camera='default', X=-1, Y=-1):
     """takes pictures at ZCoord and then can call max_pool_subdivided_images
@@ -1539,9 +1547,37 @@ def ZStackKinda(ZCoord, subdiv_dims = (4,4),
         frame = MoveConfirmSnap(GlobalX,GlobalY,Z,cap)
         frames.append(frame)
     
-    Stacked = max_pool_subdivided_images(frames, subdiv_dims) #actual stacker (thanks yujie!)
+    Stacked, IndexMap = max_pool_subdivided_images_3d(frames, subdiv_dims) #actual stacker (thanks yujie!)
 
-    return Stacked,frames
+    TrueZ3D = GetTrueZ3D(IndexMap, ZCoord) #convert map into 3D 
+    
+    
+    return Stacked,frames, TrueZ3D
+
+def GetTrueZ3D(IndexMap, ZCoord):
+    #uses dictionary lookup to convert a 2D "image" with indexes
+    #into a 2D image with each value corresponding to true Z height
+    #the idea is that after stitching these images together
+    #the lowest Z height will be set to zero and the values
+    #it is much more efficient to create the indexer just once...
+    #...but with the way yujie's code is, the order might change each time.
+    #credit to Andy Hayden and Abhijit
+
+    d = {v: k for v, k in enumerate(ZCoord)}
+        
+    indexer = np.array([d.get(i, -1) for i in range(IndexMap.min(), IndexMap.max() + 1)])  
+    
+    TrueZ3D = indexer[(IndexMap - IndexMap.min())]
+
+    return TrueZ3D
+
+def NormalizeZMap(ZMap):
+    #takes matrix of true 3D locations and subtracts all by lowest value
+    #and converts to graymap of up to 255
+    #probably should do something involving removing outliers ---
+    #if a point is 2x points away from its neighbor, make it its neighbor
+    NormalMap = ((ZMap - ZMap.min()) * 255/(ZMap.max() - ZMap.min()))
+    return NormalMap
 
 def GenerateZ(LowZ,HighZ,Precision):
     #I used this more than once so into a function it goes

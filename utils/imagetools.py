@@ -1,5 +1,8 @@
 '''functions for splitting up images and recombining them based on focus
 core by yujie --- 4/4/2020
+
+Amended to provide janky index data for 3D reconstruction 2/6/2021
+
 '''
 
 import cv2
@@ -86,11 +89,11 @@ def max_images(images, key = calculate_sharp, dimensional = False):
 def reconstruct_max_3d(list_iterators, final_dims, key = calculate_sharp):
   list_sub_images = [next(image_gen) for image_gen in list_iterators]
   prev_images, depth_index = max_images(list_sub_images, key = calculate_sharp, dimensional = True)
-  prev_depth_images = np.full((prev_images.shape[0], prev_images.shape[1]), depth_index, dtype = np.uint8)
+  prev_depth_images = np.full((prev_images.shape[0], prev_images.shape[1]), depth_index)
   for y in range(1 ,final_dims[1], 1):
     list_sub_images = [next(image_gen) for image_gen in list_iterators]
     best_image, depth_index = max_images(list_sub_images, key = calculate_sharp, dimensional = True)
-    best_depth_image = np.full((best_image.shape[0], best_image.shape[1]), depth_index, dtype = np.uint8)
+    best_depth_image = np.full((best_image.shape[0], best_image.shape[1]), depth_index)
     prev_images = np.concatenate((prev_images, best_image), axis = 1)
     prev_depth_images = np.concatenate((prev_depth_images, best_depth_image), axis = 1)
   prev_row = prev_images
@@ -98,11 +101,11 @@ def reconstruct_max_3d(list_iterators, final_dims, key = calculate_sharp):
   for x in range(1, final_dims[0], 1):
     list_sub_images = [next(image_gen) for image_gen in list_iterators]
     prev_images, depth_index = max_images(list_sub_images, key = calculate_sharp, dimensional = True)
-    prev_depth_images = np.full((prev_images.shape[0], prev_images.shape[1]), depth_index, dtype = np.uint8)
+    prev_depth_images = np.full((prev_images.shape[0], prev_images.shape[1]), depth_index)
     for y in range(1 ,final_dims[1], 1):
       list_sub_images = [next(image_gen) for image_gen in list_iterators]
       best_image, depth_index = max_images(list_sub_images, key = calculate_sharp, dimensional = True)
-      best_depth_image = np.full((best_image.shape[0], best_image.shape[1]), depth_index, dtype = np.uint8)
+      best_depth_image = np.full((best_image.shape[0], best_image.shape[1]), depth_index)
       prev_images = np.concatenate((prev_images, best_image), axis = 1)
       prev_depth_images = np.concatenate((prev_depth_images, best_depth_image), axis = 1)
     prev_row = np.concatenate((prev_row, prev_images), axis = 0)
@@ -139,14 +142,18 @@ def max_pool_subdivided_images(images, subdiv_dims = (4, 4)):
   best_image = reconstruct_max(subimage_generators, (subdiv_x, subdiv_y))
   return best_image
 
-''' Returns an image from a combined iterable IMAGES, subdivided into 
-    IMAGES.SHAPE[0]//4 x IMAGES.SHAPE[1]//4, and returns grayscale
-    3D dimensions. '''
 def max_pool_subdivided_images_3d(images, subdiv_dims = (4, 4)):
+  #like max_pool_subdivided_images but also returns
+  #a black and white "image" with each intensity equal to index of
+  #original source image that was in focus.
   subdiv_x, subdiv_y = subdiv_dims
   subimage_generators = [partition_image(image, (image.shape[0] // subdiv_x, 
     image.shape[1] // subdiv_y)) for image in images]
-  return reconstruct_max_3d(subimage_generators, (subdiv_x, subdiv_y))
+  (best_image, IndexMap) = reconstruct_max_3d(subimage_generators, (subdiv_x, subdiv_y))
+  IndexMap = IndexMap.astype(np.uint8) #stuck at uint32 for some reason
+  
+  return (best_image,IndexMap)
+
 
 ''' Convert FRAME into pure black/white where black is outside color bounds
     and white is inside color bounds'''
