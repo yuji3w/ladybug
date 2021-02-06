@@ -76,14 +76,39 @@ def calculate_sharp(frame):
    return cv2.Laplacian(frame, cv2.CV_64F).var()
 
 ''' Returns the maximum image specified by KEY '''
-def max_images(images, key = calculate_sharp):
+def max_images(images, key = calculate_sharp, dimensional = False):
   values = list(map(calculate_sharp, images))
   index_max = max(range(len(values)), key=values.__getitem__)
+  if dimensional:
+    return images[index_max], index_max
   return images[index_max]
-  # best_image, best_val = images[0], calculate_sharp(best_image)
-  # for i in range(1, len(images)):
-  #   curr_val = calculate_sharp(images[i])
-  #   if curr_val > best_val:
+
+def reconstruct_max_3d(list_iterators, final_dims, key = calculate_sharp):
+  list_sub_images = [next(image_gen) for image_gen in list_iterators]
+  prev_images, depth_index = max_images(list_sub_images, key = calculate_sharp, dimensional = True)
+  prev_depth_images = np.full((prev_images.shape[0], prev_images.shape[1]), depth_index)
+  for y in range(1 ,final_dims[1], 1):
+    list_sub_images = [next(image_gen) for image_gen in list_iterators]
+    best_image, depth_index = max_images(list_sub_images, key = calculate_sharp, dimensional = True)
+    best_depth_image = np.full((best_image.shape[0], best_image.shape[1]), depth_index)
+    prev_images = np.concatenate((prev_images, best_image), axis = 1)
+    prev_depth_images = np.concatenate((prev_depth_images, best_depth_image), axis = 1)
+  prev_row = prev_images
+  prev_depth_row = prev_depth_images
+  for x in range(1, final_dims[0], 1):
+    list_sub_images = [next(image_gen) for image_gen in list_iterators]
+    prev_images, depth_index = max_images(list_sub_images, key = calculate_sharp, dimensional = True)
+    prev_depth_images = np.full((prev_images.shape[0], prev_images.shape[1]), depth_index)
+    for y in range(1 ,final_dims[1], 1):
+      list_sub_images = [next(image_gen) for image_gen in list_iterators]
+      best_image, depth_index = max_images(list_sub_images, key = calculate_sharp, dimensional = True)
+      best_depth_image = np.full((best_image.shape[0], best_image.shape[1]), depth_index)
+      prev_images = np.concatenate((prev_images, best_image), axis = 1)
+      prev_depth_images = np.concatenate((prev_depth_images, best_depth_image), axis = 1)
+    prev_row = np.concatenate((prev_row, prev_images), axis = 0)
+    prev_depth_row = np.concatenate((prev_depth_row, prev_depth_images), axis = 0)
+  return prev_row, prev_depth_row
+
 
 ''' Selects the max of iterators of images, producing final image of size
     FINAL_DIMS[0]xFINAL_DIMS[1]. '''
