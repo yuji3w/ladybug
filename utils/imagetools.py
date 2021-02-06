@@ -86,11 +86,11 @@ def max_images(images, key = calculate_sharp, dimensional = False):
 def reconstruct_max_3d(list_iterators, final_dims, key = calculate_sharp):
   list_sub_images = [next(image_gen) for image_gen in list_iterators]
   prev_images, depth_index = max_images(list_sub_images, key = calculate_sharp, dimensional = True)
-  prev_depth_images = np.full((prev_images.shape[0], prev_images.shape[1]), depth_index, np.uint8)
+  prev_depth_images = np.full((prev_images.shape[0], prev_images.shape[1]), depth_index, dtype = np.uint8)
   for y in range(1 ,final_dims[1], 1):
     list_sub_images = [next(image_gen) for image_gen in list_iterators]
     best_image, depth_index = max_images(list_sub_images, key = calculate_sharp, dimensional = True)
-    best_depth_image = np.full((best_image.shape[0], best_image.shape[1]), depth_index, np.uint8)
+    best_depth_image = np.full((best_image.shape[0], best_image.shape[1]), depth_index, dtype = np.uint8)
     prev_images = np.concatenate((prev_images, best_image), axis = 1)
     prev_depth_images = np.concatenate((prev_depth_images, best_depth_image), axis = 1)
   prev_row = prev_images
@@ -98,11 +98,11 @@ def reconstruct_max_3d(list_iterators, final_dims, key = calculate_sharp):
   for x in range(1, final_dims[0], 1):
     list_sub_images = [next(image_gen) for image_gen in list_iterators]
     prev_images, depth_index = max_images(list_sub_images, key = calculate_sharp, dimensional = True)
-    prev_depth_images = np.full((prev_images.shape[0], prev_images.shape[1]), depth_index, np.uint8)
+    prev_depth_images = np.full((prev_images.shape[0], prev_images.shape[1]), depth_index, dtype = np.uint8)
     for y in range(1 ,final_dims[1], 1):
       list_sub_images = [next(image_gen) for image_gen in list_iterators]
       best_image, depth_index = max_images(list_sub_images, key = calculate_sharp, dimensional = True)
-      best_depth_image = np.full((best_image.shape[0], best_image.shape[1]), depth_index, np.uint8)
+      best_depth_image = np.full((best_image.shape[0], best_image.shape[1]), depth_index, dtype = np.uint8)
       prev_images = np.concatenate((prev_images, best_image), axis = 1)
       prev_depth_images = np.concatenate((prev_depth_images, best_depth_image), axis = 1)
     prev_row = np.concatenate((prev_row, prev_images), axis = 0)
