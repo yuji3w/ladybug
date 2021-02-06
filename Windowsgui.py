@@ -5,6 +5,8 @@
 
 #December 28 2020: It has been a heck of a year since March 16.
 
+
+
 from numpy import * #for generating scan parameters
 import random #for repeatability tests
 import time
@@ -40,6 +42,7 @@ import serial.tools.list_ports
 
 #dictionary passed into gridscan. At minimum must change
 #scanlocations! Can be made with definescan
+#The fact that this isn't a class is the reason my code is always broke
 
 DefaultScan = {'FileType':".jpg",'Width':640,'Height':480
                   ,'CameraSettings': [],'Restarted Scan':False,
@@ -71,8 +74,6 @@ ZScanMax = 0
 XScanStep = 100 #default step parameters,
 YScanStep = 100
 ZScanStep = 500
-RScanNumber = 1 #needs consolidation with absolute value positioning system. kind of a mess
-
 
 XMin = 0 #normally but theoretically could be altered by user
 YMin = 0 
@@ -176,8 +177,41 @@ def DoubleImage(ParentImage):
 
 def RemoveBlank(image):
     #https://stackoverflow.com/questions/13538748/crop-black-edges-with-opencv
+    #Expensively removes black/blank boundaries of large image
     y_nonzero, x_nonzero, _ = np.nonzero(image)
     return image[np.min(y_nonzero):np.max(y_nonzero), np.min(x_nonzero):np.max(x_nonzero)]
+
+def MoveToPixelLocation(FinXPix,FinYPix,PixelsPerMM = 370):
+    #moves to pixel location with idealized grid with bottom left zero
+    #moves to center of that image (bad?)
+    #To deal with the rounding problem, just report your actual movement
+    #since we only have 0.1 mm step precision
+    CurXPix,CurYPix = ConvertXYToPixelLocations(
+        GlobalX,GlobalY,PixelsPerMM=PixelsPerMM)
+
+def ConvertPixelToXY(blank):
+    #convert pixel to XY locations
+    pass 
+    
+    
+
+def SmushScan(positions, PixelsPerMM = 370):
+    #Goes to positions and blindly stitches them together
+    MajorImage = MakeGiantImage(PixelsPerMM = PixelsPerMM)
+
+    XStart = positions['X'][0]
+    YStart = positions['Y'][0]
+    
+    for i in range(len(positions['X'])):
+        X = positions['X'][i]
+        Y = positions['Y'][i]
+        Z = positions['Z'][i]
+
+        MajorImage = GoToSmush(MajorImage,X,Y,Z,PixelsPerMM=PixelsPerMM)
+        time.sleep(0.15)
+
+    name = "capture\\Smush test from X {} to {}, Y {} to {} .jpg".format(str(XStart),str(X),str(YStart),str(Y))
+    SavePicture(name,MajorImage) #no batching, all images are in memory. Careful!
 
 def SmushDemo(StartX=7.5,StartY=4,StartZ=7.9):
     MajorImage = MakeGiantImage()
@@ -259,7 +293,7 @@ def EngageSteppers(machine = 'ladybug'):
         
     SendGCode("M84 S36000") #tells it not to turn off motors for S seconds (default 60 grr)
     time.sleep(0.05)
-    SendGCode("M302 P1") #PREVENTS ERRORS FROM 'cold' EXTRUSION
+    SendGCode("M302 P1") #prevents errors from 'cold' extrusion
     time.sleep(0.05)
     SendGCode("M203 Z5") #lets z go a bit faster. disabled if using weak nano motor
     #time.sleep(0.05) #disabled for NANO. uncomment if Z too slow
@@ -2327,10 +2361,10 @@ try:
     frame = TakePicture(cap) #for testing
     
     LadyBug = RestartSerial() #initiate GCODE based machine
-    StartThreadedCamera()
+    StartThreadedCamera() #This is the main opencv window you interact with
     
-    scan_file = open('/home/pi/Desktop/ladybug/scandata.pkl', 'rb')
-
+    scan_file = open('/home/pi/Desktop/ladybug/scandata.pkl', 'rb') 
+    #I can't uncomment this pi related stuff without fixing the whole try except block
     scan_params = pickle.load(scan_file)
     scan_file.close()
 
@@ -2348,6 +2382,6 @@ try:
     GridScan(locations,conditions)
 
 except FileNotFoundError:
-    
-    print('no saved scan file found. doing nothing')
+    #...because there's a hardcoded pi desktop scan file up there
+    print('Lets scan some stuff')
     
