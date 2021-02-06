@@ -181,17 +181,41 @@ def RemoveBlank(image):
     y_nonzero, x_nonzero, _ = np.nonzero(image)
     return image[np.min(y_nonzero):np.max(y_nonzero), np.min(x_nonzero):np.max(x_nonzero)]
 
-def MoveToPixelLocation(FinXPix,FinYPix,PixelsPerMM = 370):
+def MoveToPixelLocation(XPix,YPix,Z = -1, PixelsPerMM = 370):
     #moves to pixel location with idealized grid with bottom left zero
     #moves to center of that image (bad?)
     #To deal with the rounding problem, just report your actual movement
     #since we only have 0.1 mm step precision
-    CurXPix,CurYPix = ConvertXYToPixelLocations(
-        GlobalX,GlobalY,PixelsPerMM=PixelsPerMM)
+    #returns pic, actual Xpos, Actual Ypos, actual XPix, nearest YPix, 
 
-def ConvertPixelToXY(blank):
-    #convert pixel to XY locations
-    pass 
+    if Z == -1:
+        Z = GlobalZ 
+    
+    FinXPos, FinYPos, FinXPix, FinYPix = ConvertPixelToXY(
+        XPix, YPix, PixelsPerMM = PixelsPerMM)
+    
+    pic = MoveConfirmSnap(FinXPos,FinYPos,Z,cap)
+
+    return pic,FinXPos,FinYPos,FinXPix,FinYPix
+    
+def ConvertPixelToXY(XPix,YPix, PixelsPerMM = 370, debug = True):
+    #convert pixel to NEAREST 0.1 XY locations.
+    #Returns XY location and REAL XPix and YPix gone to
+    RawXPos = XPix/PixelsPerMM
+    RawYPos = YPix/PixelsPerMM
+
+    NearestXPos = round(RawXPos,1) #round to 0.1 MM
+    NearestYPos = round(RawYPos,1)
+
+    NearestXPix = round(NearestXPos * PixelsPerMM,2) #will be float
+    NearestYPix = round(NearestYPos * PixelsPerMM,2)
+
+    if debug:
+        print("""At desired XPix {} and desired YPix {},
+    The closest X mm is: {} and the Closest Y mm is: {},
+    which corresponds to XPixel {} and YPixel {}""".format(
+                   XPix,YPix,NearestXPos,NearestYPos,NearestXPix,NearestYPix))
+    return (NearestXPos,NearestYPos,NearestXPix,NearestYPix)
     
     
 
