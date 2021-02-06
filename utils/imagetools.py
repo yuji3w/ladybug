@@ -139,6 +139,15 @@ def max_pool_subdivided_images(images, subdiv_dims = (4, 4)):
   best_image = reconstruct_max(subimage_generators, (subdiv_x, subdiv_y))
   return best_image
 
+''' Returns an image from a combined iterable IMAGES, subdivided into 
+    IMAGES.SHAPE[0]//4 x IMAGES.SHAPE[1]//4, and returns grayscale
+    3D dimensions. '''
+def max_pool_subdivided_images_3d(images, subdiv_dims = (4, 4)):
+  subdiv_x, subdiv_y = subdiv_dims
+  subimage_generators = [partition_image(image, (image.shape[0] // subdiv_x, 
+    image.shape[1] // subdiv_y)) for image in images]
+  return reconstruct_max_3d(subimage_generators, (subdiv_x, subdiv_y))
+
 ''' Convert FRAME into pure black/white where black is outside color bounds
     and white is inside color bounds'''
 def frame_hue_bounded(frame, lower_bound = np.array([20, 100, 100]), 
