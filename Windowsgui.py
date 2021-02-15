@@ -170,7 +170,52 @@ def CombineImages(XLow,XHigh,YLow,YHigh, MinorImage, MajorImage):
         
     return MajorImage
 
+def StackStitchFolder(folder, PixelsPerMM = 370, grid = (32,32)):
+    #returns stacked and stitched big image along with depthmap
+    #expects folders to be already ZSorted
+    #grid is how divided images are. Acceptable: 32, 40, 80, 160 (higher = slow)
+    #question: How to deal with max image size problem
+    
+    MajorImage = MakeGiantImage(PixelsPerMM = PixelsPerMM)
+    ZMap = MakeGiantImage(PixelsPerMM = PixelsPerMM,dim=1, floats=True) #black and white
 
+    ImageFolders = [x[0] for x in os.walk(folder)][1:]
+    for i, folder in enumerate(ImageFolders):
+        files = os.listdir(folder)
+        ZCoord = []
+        frames = []
+
+        if not i % 10:
+            print("{} of {} sets of folders".format(i,len(ImageFolders)))
+        
+        for file in files:
+            file = folder + "\\" + file
+            positions = MakePositionsFromName(file)
+            X,Y,Z = positions[0],positions[1],positions[2]
+            frame = cv2.imread(file)
+            frames.append(frame)
+            ZCoord.append(Z)
+        
+        Stacked, IndexMap = max_pool_subdivided_images_3d(frames, grid) #stack
+        TrueZ3D = GetTrueZ3D(IndexMap, ZCoord) #convert map into raw Z values 
+        XLow,XHigh,YLow,YHigh = ConvertXYToPixelLocations(X,Y,PixelsPerMM)
+        
+        MajorImage = CombineImages(XLow,XHigh,YLow,YHigh, Stacked, MajorImage)    
+        ZMap = CombineImages(XLow,XHigh,YLow,YHigh, TrueZ3D, ZMap) #the problem 
+
+    print('cleaning up final images...')
+
+    #inefficiently crop blank space from images.
+    #Necessary for ZMap because blank "0" areas mess up normalization 
+    ZMap = RemoveBlank(ZMap)
+    MajorImage = RemoveBlank(MajorImage)
+    
+    DepthImage = NormalizeZMap(ZMap) #problem: "blank space" is 0...
+    DepthImage = DepthImage.astype(uint8)#.astype result of 3 hrs work
+    
+    return MajorImage, DepthImage, ZMap
+ 
+        
 def DoubleImage(ParentImage):
     #Does the yujie thing and doubles the image
     pass #lol where do you extend it 
@@ -178,7 +223,11 @@ def DoubleImage(ParentImage):
 def RemoveBlank(image):
     #https://stackoverflow.com/questions/13538748/crop-black-edges-with-opencv
     #Expensively removes black/blank boundaries of large image
-    y_nonzero, x_nonzero, _ = np.nonzero(image)
+    
+    if len(image.shape) == 2: #quick fix for 2D images 
+        y_nonzero, x_nonzero = np.nonzero(image)
+    else:
+        y_nonzero, x_nonzero, _ = np.nonzero(image)
     return image[np.min(y_nonzero):np.max(y_nonzero), np.min(x_nonzero):np.max(x_nonzero)]
 
 def MoveToPixelLocation(XPix,YPix,Z = -1, PixelsPerMM = 370):
@@ -216,8 +265,7 @@ def ConvertPixelToXY(XPix,YPix, PixelsPerMM = 370, debug = True):
     which corresponds to XPixel {} and YPixel {}""".format(
                    XPix,YPix,NearestXPos,NearestYPos,NearestXPix,NearestYPix))
     return (NearestXPos,NearestYPos,NearestXPix,NearestYPix)
-    
-    
+
 
 def SmushScan(positions, PixelsPerMM = 370):
     #Goes to positions and blindly stitches them together
@@ -226,7 +274,7 @@ def SmushScan(positions, PixelsPerMM = 370):
 
     XStart = positions['X'][0]
     YStart = positions['Y'][0]
-    
+
     for i in range(len(positions['X'])):
         X = positions['X'][i]
         Y = positions['Y'][i]
@@ -237,6 +285,7 @@ def SmushScan(positions, PixelsPerMM = 370):
 
     name = "capture\\Smush test from X {} to {}, Y {} to {} .jpg".format(str(XStart),str(X),str(YStart),str(Y))
     SavePicture(name,MajorImage) #no batching, all images are in memory. Careful!
+
 
 def SmushDemo(StartX=7.5,StartY=4,StartZ=7.9):
     MajorImage = MakeGiantImage()
@@ -258,13 +307,26 @@ def SmushDemo(StartX=7.5,StartY=4,StartZ=7.9):
 def MakeGiantImage(PixelsPerMM = 370,
                         BaseWidth = 640, BaseHeight = 480,
                         CanvasXMin = 0, CanvasYMin = 0,
-                        CanvasXMax = 40, CanvasYMax = 40):
+                        CanvasXMax = 70, CanvasYMax = 70, dim=3,
+                        floats=False):#floats for using with decimal z heights
     #Will initialize a HUGE blank image to encompass the maximum possible search area
     #And which will then have real image information filled in
     #Because Yujie says that it's more efficient to do this than to expand on command
     XPixels = round(PixelsPerMM * (CanvasXMax - CanvasXMin))
     YPixels = round(PixelsPerMM * (CanvasYMax - CanvasYMin))
-    YujieImage = np.zeros((YPixels,XPixels,3), np.uint8) #square image because plate is square, surprise!
+    
+    if dim == 1: #quick fix for pure 2d matrices. Sorry!
+        if floats:#Raw ZHeights need floats to combine without rounding!!
+            YujieImage = np.zeros((YPixels,XPixels), np.float64)
+        else:
+            YujieImage = np.zeros((YPixels,XPixels), np.uint8) 
+    else:
+        if floats:#too tired to save 2 lines with proper fix
+            YujieImage = np.zeros((YPixels,XPixels,dim), np.float64)
+        else:
+            YujieImage = np.zeros((YPixels,XPixels,dim), np.uint8) #square image because plate is square, surprise!
+
+    
     return YujieImage
 
 
@@ -388,13 +450,6 @@ def GetPositions(machine = 'ladybug',tries=1):
     if not dump:
             #This is one big unsolved problem. Why did the connection break?
             return False
-
-def CheckTriggered(LadyBug): #superceded by just making homing slow 
-        junk = LadyBug.read()
-        time.wait(0.01)
-        SendGCode("M119")
-        data = LadyBug.read()
-        return ("Something to do with this data")
 
 
 def WaitForConfirmMovements(X,Y,Z,attempts=100): #50 is several seconds
@@ -816,7 +871,8 @@ def FindMissingLocations(FullLocations, PartialLocations):
     return MissingLocations
 
 
-def SortOrStackPipe(ParentFolder, FocusDictionary = {}, extension = ".jpg", AcceptableBlur = 150):
+def SortOrStackPipe(ParentFolder, FocusDictionary = {},
+                    extension = ".jpg", AcceptableBlur = 150):
     #this will take a parent folder containing standard output of scan
     #create symbolic copies of all files sorted by X/Y location
     #get rid of all files with no useful information (completely blurred)
@@ -922,7 +978,6 @@ def SortOrStackPipe(ParentFolder, FocusDictionary = {}, extension = ".jpg", Acce
     
                 
     print('{} images need to be stacked before optimal stitching'.format(count))
-
 
 
 def MakeNameFromPositions(X,Y,Z,R,FileType = ".jpg"):
@@ -1171,7 +1226,7 @@ def DefineScan(XMin, XMax, YMin, YMax, ZMin, ZMax, RMin, RMax, XSteps=100, YStep
 
 def InterlaceZ(ScanLocations, ZCoord):
     #Takes a ScanLocations Dictionary (expected 2 dimensional, unchanging Z)
-    #and interlaces ZCoord inside it. Gives Z priority for better stacking
+    #and interlaces ZCoord evenly inside it. (Z priority is better for stacking)
     #Advanced: Z Height depends on X/Y location as opposed to comprehensive
     XLocations = ScanLocations['X']
     YLocations = ScanLocations['Y']
@@ -1206,7 +1261,7 @@ def RotateScan(ScanLocations, degrees = 30):
     #X Location minus offset becomes new hypotenuse after rotating.
     #(sin(degrees) * X) + Z gives new Z .
     #cos(degrees)* X gives new X. Right? Y should be unchanged.
-
+    #make this Axis-able
     XLocations,ZLocations = ScanLocations['X'],ScanLocations['Z']
     sinof = sin(np.deg2rad(degrees))
     cosof = cos(np.deg2rad(degrees))
@@ -1221,7 +1276,8 @@ def RotateScan(ScanLocations, degrees = 30):
 
 #all assumes cv2 here
 def StartCamera(camera = 1, Width = 640, Height = 480):
-    #Assumes using laptop --- which already has a camera. Change to 0 otherwise
+    #assumes having a built-in webcam, too. change to 0 otherwise
+    #most fundamental thing I guess. Change Width and Height here?
 
     cap = cv2.VideoCapture(camera)
     cap.set(3,Width)
@@ -1558,7 +1614,7 @@ def GetTrueZ3D(IndexMap, ZCoord):
     #uses dictionary lookup to convert a 2D "image" with indexes
     #into a 2D image with each value corresponding to true Z height
     #the idea is that after stitching these images together
-    #the lowest Z height will be set to zero and the values
+    #lowest Z height will be set to zero then all expanded to 255 grayshade
     #it is much more efficient to create the indexer just once...
     #...but with the way yujie's code is, the order might change each time.
     #credit to Andy Hayden and Abhijit
@@ -1576,7 +1632,9 @@ def NormalizeZMap(ZMap):
     #and converts to graymap of up to 255
     #probably should do something involving removing outliers ---
     #if a point is 2x points away from its neighbor, make it its neighbor
+    
     NormalMap = ((ZMap - ZMap.min()) * 255/(ZMap.max() - ZMap.min()))
+    
     return NormalMap
 
 def GenerateZ(LowZ,HighZ,Precision):
@@ -2443,5 +2501,8 @@ try:
 
 except FileNotFoundError:
     #...because there's a hardcoded pi desktop scan file up there
+    print ('Press H to home, F to autofocus, D to autostack, space takes pic')
+    print ('i,j,k,l move XY, - + move Z axis')
+    
     print('Lets scan some stuff')
     
