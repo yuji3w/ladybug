@@ -4,8 +4,7 @@
 
 LADYBUG is a family of tools for doing cool stuff with an inexpensive USB microscope. It works by using motors to manipulate an object and the camera in tandem, allowing you to fly around an object and extend its depth of field and field of view with automated stacking, stitching, and more. The easiest way to get started is using your existing 3D printer --- all you need is some duct-tape --- but you can also go DIY like we did at first and modify a couple of PS3 Blu-Ray players.
 
-![image](https://user-images.githubusercontent.com/41928151/110868232-3886dd80-8296-11eb-943a-bbe6b099ae09.png)
-
+![image](https://user-images.githubusercontent.com/41928151/108125132-0b1f8900-7076-11eb-91a6-a118d48098ad.jpg)
 ![image](https://user-images.githubusercontent.com/41928151/110870344-3aeb3680-829a-11eb-9086-dd9bbff4a4a4.png)
 
 ![image](https://user-images.githubusercontent.com/41928151/110870473-856cb300-829a-11eb-8f06-e4548f48dc52.png)
