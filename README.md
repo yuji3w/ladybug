@@ -16,7 +16,8 @@ Rotating in between successive 2D scans then allows imaging the entire object in
 
 ![wasp](https://user-images.githubusercontent.com/41928151/108125989-41113d00-7077-11eb-8b0e-636b4be79a74.gif)
 
-The system isn't really optimized for it, but standard photogrammetry sometimes works after generating these rotary images: 
+The system isn't really optimized for it, but standard photogrammetry sometimes works after generating these rotary images:
+
 ![scan gif process](https://user-images.githubusercontent.com/41928151/110874049-09299e00-82a1-11eb-9cf5-e63c58717089.gif)
 
 And if stabbing dead insects isn't your cup of tea, feel free to follow living ones with realtime tracking ability: 
