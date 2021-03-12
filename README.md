@@ -8,7 +8,7 @@ LADYBUG is a family of tools for motorizing a USB microscope. The easiest way to
 
 All LadyBugs have the ability to do 2D stitching to gain an unlimited field of view:
 
-![wasp progression](https://user-images.githubusercontent.com/41928151/110873827-97515480-82a0-11eb-9c9b-4328488378ce.jpg)
+![wasp progression](https://user-images.githubusercontent.com/41928151/110876804-43e20500-82a6-11eb-8c4c-2ea6764f049c.jpg)
 
 Rotating in between successive 2D scans then allows imaging the entire object in this same expanded field:
 
