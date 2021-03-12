@@ -2,22 +2,30 @@
 
 ![image](https://user-images.githubusercontent.com/41928151/110868281-4d637100-8296-11eb-9c6c-f667831baf0d.png)
 
-LADYBUG is a family of tools for doing cool stuff with an inexpensive USB microscope. It works by using motors to manipulate an object and the camera in tandem, allowing you to fly around an object and extend its depth of field and field of view with automated stacking, stitching, and more. The easiest way to get started is using your existing 3D printer --- all you need is some duct-tape --- but you can also go DIY like we did at first and modify a couple of PS3 Blu-Ray players.
+LADYBUG is a family of tools for motorizing a USB microscope. The easiest way to get started is using your existing 3D printer --- all you need is some duct-tape --- but you can also go super-DIY like we did at first with a couple of PS3 Blu-Ray players.
 
-![image](https://user-images.githubusercontent.com/41928151/108125132-0b1f8900-7076-11eb-91a6-a118d48098ad.jpg)
+![blu ray style](https://user-images.githubusercontent.com/41928151/110873178-2f4e3e80-829f-11eb-8096-217f4cf2c4a6.jpg)
 
 ![Designed entirely in TinkerCAD](https://user-images.githubusercontent.com/41928151/110873040-e6968580-829e-11eb-9798-1913765a4479.gif)
 
-
 ![image](https://user-images.githubusercontent.com/41928151/110870473-856cb300-829a-11eb-8f06-e4548f48dc52.png)
 
-![image](https://user-images.githubusercontent.com/41928151/110868377-7d127900-8296-11eb-988b-aa1c6eef0fa7.png)
+All LadyBugs have the ability to do 2D stitching to gain an unlimited field of view:
 
-Speaking of insects that look terrifying up close, you can also follow moving ones around if you want:
+![wasp progression](https://user-images.githubusercontent.com/41928151/110873827-97515480-82a0-11eb-9c9b-4328488378ce.jpg)
 
-![image](https://user-images.githubusercontent.com/41928151/110871631-bea62280-829c-11eb-964c-ec139454fbc2.png)
+Rotating in between successive 2D scans then allows imaging the entire object in this same expanded field:
 
-While the original focus of the project was on hardware (building the thing out of blu-ray players in the first place), the core functionality that has remained useful and been expanded upon is motorized scanning to get huge, high quality micropanoramas out of an otherwise limited imaging device. A scan of a coin-sized object could easily be 500 megapixels with the upper limit theoretically being the size of the build plate and time of the scan. 
+![wasp](https://user-images.githubusercontent.com/41928151/108125989-41113d00-7077-11eb-8b0e-636b4be79a74.gif)
+
+The system isn't really optimized for it, but standard photogrammetry sometimes works after generating these rotary images: 
+![scan gif process](https://user-images.githubusercontent.com/41928151/110874049-09299e00-82a1-11eb-9cf5-e63c58717089.gif)
+
+And if stabbing dead insects isn't your cup of tea, feel free to follow living ones with realtime tracking ability: 
+
+
+While the original focus of the project was on hardware (stubbornly choosing to build the thing out of blu-ray players), the core functionality that has survived and been expanded upon is motorized scanning to get huge, high quality micropanoramas out of an otherwise limited imaging device. A scan of a coin-sized object could easily be 500 in-focus megapixels with the upper limit theoretically being the size of the build plate and time of the scan. 
+
 
 ![image](https://user-images.githubusercontent.com/41928151/110871462-77b82d00-829c-11eb-8382-9e0b08e9ce3d.png)
 
