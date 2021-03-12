@@ -1,15 +1,34 @@
 # ladybug
 
-LADYBUG is an up to 5-axis motorized digital microscope made from 3D-printed and inexpensive consumer electronics. The original was made super DIY out of Blu-Ray players, breadboard motor drivers, and a raspberry pi, while a followup version is based off a USB microscope duct-taped to a 3D printer run by GCode through a windows machine:
+![image](https://user-images.githubusercontent.com/41928151/110868281-4d637100-8296-11eb-9c6c-f667831baf0d.png)
 
-https://hackaday.io/project/169362-ladybug-beefy-3d-printer-motorized-microscope
+LADYBUG is a family of tools for doing cool stuff with an inexpensive USB microscope. It works by using motors to manipulate an object and the camera in tandem, allowing you to fly around an object and extend its depth of field and field of view with automated stacking, stitching, and more. The easiest way to get started is using your existing 3D printer --- all you need is some duct-tape --- but you can also go DIY like we did at first and modify a couple of PS3 Blu-Ray players.
 
-https://www.instructables.com/id/LadyBug-a-Motorized-Microscope-and-3D-Scanner-for-/
+![image](https://user-images.githubusercontent.com/41928151/110868232-3886dd80-8296-11eb-943a-bbe6b099ae09.png)
 
-While the original focus of the project was on hardware (building the damn thing out of blu-ray players in the first place), the core functionality that has survived and remained useful is motorized scanning to get huge, high quality micropanoramas out of an otherwise limited imaging device. A scan of a coin-sized object could easily be 500 megapixels with the upper limit theoretically being the size of the build plate and time of the scan.
+![image](https://user-images.githubusercontent.com/41928151/110870344-3aeb3680-829a-11eb-9086-dd9bbff4a4a4.png)
 
-An unaltered 3D printer can be used for motorized inspection with no scanning, low magnification 2D scanning of relatively flat surfaces, and high magnification 2.5 D scanning that combines stacking and stitching. By adding a fourth motor (for instance, the extruder), 3D rotation and scanning of small objects like insects can be done, and a fifth motor can be added for greater flexibility, too. 
+![image](https://user-images.githubusercontent.com/41928151/110870473-856cb300-829a-11eb-8f06-e4548f48dc52.png)
 
-A huge amount of development remains to be done, especially with user interfacing and image processing like 3D model generation. A whole-hearted effort was made to get attention for and fund such an effort with a Kickstarter (https://www.kickstarter.com/projects/1490222859/ladybug-a-3d-scanning-microscope-for-small-and-huge-things). Any coders or interested users are absolutely welcome to get involved!
+![image](https://user-images.githubusercontent.com/41928151/110868377-7d127900-8296-11eb-988b-aa1c6eef0fa7.png)
 
-Currently, the project is being maintained and occasionally updated by its creator Ahron Wayne (WayneWayneHello), with valuable contributions from Yujie Wang (yuji3w) and Daniel Piotrowski (counterintuitive98). 
+Speaking of insects that look terrifying up close, you can also follow moving ones around if you want:
+
+![image](https://user-images.githubusercontent.com/41928151/110871631-bea62280-829c-11eb-964c-ec139454fbc2.png)
+
+While the original focus of the project was on hardware (building the thing out of blu-ray players in the first place), the core functionality that has remained useful and been expanded upon is motorized scanning to get huge, high quality micropanoramas out of an otherwise limited imaging device. A scan of a coin-sized object could easily be 500 megapixels with the upper limit theoretically being the size of the build plate and time of the scan. 
+
+![image](https://user-images.githubusercontent.com/41928151/110871462-77b82d00-829c-11eb-8382-9e0b08e9ce3d.png)
+
+Also, incidentally, the process of making sure each spot is in focus gives you 3D depth information for free. In the future, I'd like to integrate this into full rotational scanning, but for now, it works surprisingly well for "2.5 D" scanning of somewhat flat objects. 
+
+![slazzer-edit-image](https://user-images.githubusercontent.com/41928151/110871706-e0070e80-829c-11eb-92a6-2f7f0d4bb349.png)
+
+![image](https://user-images.githubusercontent.com/41928151/110871839-20668c80-829d-11eb-97b6-f9cced4742de.png)
+
+A huge amount of low-hanging fruit is still out there, especially when it comes to the user interface and making the image processing and 3D modeling more automatic. For this sake, a whole-hearted effort was put [into a Kickstarter](https://www.kickstarter.com/projects/1490222859/ladybug-a-3d-scanning-microscope-for-small-and-huge-things), which still might be revisited at a later date. Some other links containing project information include: [Hackaday](
+https://hackaday.io/project/169362-ladybug-beefy-3d-printer-motorized-microscope)(3D printer version), [Instructables](https://www.instructables.com/id/LadyBug-a-Motorized-Microscope-and-3D-Scanner-for-/) (Blu-Ray version), [Thingiverse] (https://www.thingiverse.com/thing:3956243) (Blu-Ray STL files), [EasyZoom](https://www.easyzoom.com/profile/4654) (full-sized images), [SketchFab](https://sketchfab.com/ladybeetle/models) (3D models), and my [youtube channel](https://www.youtube.com/channel/UC2RQ19zQ0b0mtu7_jmuddhA) and [personal website](https://www.ahronwayne.com/). 
+
+
+Currently, the project is being maintained and occasionally updated by its creator Ahron Wayne (WayneWayneHello), with valuable contributions in software from Yujie Wang (yuji3w) and hardware from Daniel Piotrowski (counterintuitive98).
+ 
