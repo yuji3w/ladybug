@@ -50,7 +50,7 @@ DefaultScan = {'FileType':".jpg",'Width':640,'Height':480
                'ScanLocations':{'X':[],'Y':[],'Z':[],'R':[]},
                "Save Location":"", "Start Time":0, "PointInScan": 0,
                "Failures":[], "VibrationControl":0.15,
-               'Camera':False, "ScanRates": []}
+               'Camera':False, "ScanRates": [], 'FocusDictionary':{}}
 
 
 #Distances from home position in steps for each motor.
@@ -146,7 +146,7 @@ def GoToSmush(MajorImage,
 
     XLow,XHigh,YLow,YHigh = ConvertXYToPixelLocations(X=X,Y=Y, PixelsPerMM = PixelsPerMM,
                              ImageXWidth=ImageXWidth,ImageYHeight=ImageYHeight)
-
+    
     MajorImage = CombineImages(XLow,XHigh,YLow,YHigh,MinorImage,MajorImage)
     return MajorImage
 
@@ -170,14 +170,134 @@ def CombineImages(XLow,XHigh,YLow,YHigh, MinorImage, MajorImage):
         
     return MajorImage
 
-def StackStitchFolder(folder, PixelsPerMM = 370, grid = (32,32)):
+def StackFolder(folder, StackedOutputFolder, ZMapOutputFolder, grid = (32,32)):
+    """ Stacks series of folders and saves their outputs without stitching
+        Basically just breaking stackstitchfolder in half; might do the
+        other half too and just call the subfunctions"""
+
+    if not os.path.exists(StackedOutputFolder):
+        print("can't find {}, creating directory".format(StackedOutputFolder))
+        os.makedirs(StackedOutputFolder)
+    if not os.path.exists(ZMapOutputFolder):
+        print("can't find {}, creating directory".format(ZMapOutputFolder))
+        os.makedirs(ZMapOutputFolder)
+
+    ImageFolders = [x[0] for x in os.walk(folder)][1:]
+
+    lowest_Z = 1000
+    highest_Z = 0
+    for folder in ImageFolders: #quick fix for getting lowest Z up front
+        files = os.listdir(folder)
+        
+        for file in files:
+            file = folder + "\\" + file
+            
+            ZCoord = MakePositionsFromName(file)[2]
+            if ZCoord < lowest_Z:
+                lowest_Z = ZCoord
+            if ZCoord > highest_Z:
+                highest_Z = ZCoord
+
+    for i, folder in enumerate(ImageFolders):        
+        files = os.listdir(folder)
+        ZCoord = []
+        frames = []
+
+        if not i % 10:
+            print("{} of {} sets of folders".format(i,len(ImageFolders)))
+
+        
+        for file in files:
+            file_end = file #base filename for saving files in new file
+            file = folder + "\\" + file
+            positions = MakePositionsFromName(file)
+            X,Y,Z = positions[0],positions[1],positions[2]
+            frame = cv2.imread(file)
+            frames.append(frame)
+            ZCoord.append(Z)
+        
+        Stacked, IndexMap = max_pool_subdivided_images_3d(frames, grid) #stack
+        TrueZ3D = GetTrueZ3D(IndexMap, ZCoord) #convert map into raw Z values 
+
+        DepthImage = NormalizeZMap(ZMap,
+                                   lowest_Z = lowest_Z,
+                                   highest_Z = highest_Z) #problem: "blank space" is 0...
+        DepthImage = DepthImage.astype(uint8)
+        
+        #idea: calculate mean of zmap and use this for z position in filename
+        StackedFile = StackedOutputFolder + "\\" + file_end
+        ZMapFile = ZMapOutputFolder + "\\" + file_end
+        
+
+        SavePicture(StackedFile,Stacked)
+        SavePicture(ZMapFile,DepthImage)
+
+    print('Done stacking folders')
+
+def StitchFolder(folder, PixelsPerMM = 370, GiantSize = 'default', StitchZMap = False):
+
+    
+    if GiantSize == 'default': #Quick fix to work with low res scans
+        #GiantSize = min(int(26000/PixelsPerMM),120)
+        GiantSize = 120 #go for broke 
+    if not StitchZMap:
+        MajorImage = MakeGiantImage(PixelsPerMM = PixelsPerMM,
+                                    CanvasXMin = 0, CanvasXMax = GiantSize,
+                                    CanvasYMin = 0, CanvasYMax = GiantSize)
+    else:
+        MajorImage = MakeGiantImage(PixelsPerMM = PixelsPerMM, #ZMap image! FLOATS!
+                          CanvasXMin = 0, CanvasXMax = GiantSize,
+                                CanvasYMin = 0, CanvasYMax = GiantSize,
+                          dim=1, floats=True) #black and white
+    
+        
+    files = os.listdir(folder)
+    frames = []
+
+    for file in files:
+        file = folder + "\\" + file
+        positions = MakePositionsFromName(file)
+        X,Y,Z = positions[0],positions[1],positions[2]
+
+        
+            
+        frame = cv2.imread(file)
+        frames.append(frame)
+            
+        XLow,XHigh,YLow,YHigh = ConvertXYToPixelLocations(X,Y,PixelsPerMM) #offset target?
+        if not StitchZMap:
+            MajorImage = CombineImages(XLow,XHigh,YLow,YHigh, frame, MajorImage) 
+        else: #Banish the 3rd dimension
+            MajorImage = CombineImages(XLow,XHigh,YLow,YHigh, frame[:,:,0], MajorImage) 
+    print('cleaning up final image...')
+
+    #inefficiently crop blank space from images.
+    #Necessary for ZMap because blank "0" areas mess up normalization 
+    MajorImage = RemoveBlank(MajorImage)
+
+    if StitchZMap:
+        MajorImage = NormalizeZMap(MajorImage) #problem: "blank space" is 0...
+        MajorImage = MajorImage.astype(uint8)#.astype result of 3 hrs work
+    
+    return MajorImage
+ 
+
+def StackStitchFolder(folder, PixelsPerMM = 370, grid = (32,32),GiantSize='default'):
     #returns stacked and stitched big image along with depthmap
     #expects folders to be already ZSorted
     #grid is how divided images are. Acceptable: 32, 40, 80, 160 (higher = slow)
     #question: How to deal with max image size problem
+    #needs to save individual stacked pics for later manipulating
     
-    MajorImage = MakeGiantImage(PixelsPerMM = PixelsPerMM)
-    ZMap = MakeGiantImage(PixelsPerMM = PixelsPerMM,dim=1, floats=True) #black and white
+    if GiantSize == 'default': #Quick fix to work with low res scans
+        GiantSize = min(int(26000/PixelsPerMM),120) 
+    MajorImage = MakeGiantImage(PixelsPerMM = PixelsPerMM,
+                                CanvasXMin = 0, CanvasXMax = GiantSize,
+                                CanvasYMin = 0, CanvasYMax = GiantSize)
+    ZMap = MakeGiantImage(PixelsPerMM = PixelsPerMM,
+                          CanvasXMin = 0, CanvasXMax = GiantSize,
+                                CanvasYMin = 0, CanvasYMax = GiantSize,
+                          dim=1, floats=True) #black and white
 
     ImageFolders = [x[0] for x in os.walk(folder)][1:]
     for i, folder in enumerate(ImageFolders):
@@ -199,7 +319,7 @@ def StackStitchFolder(folder, PixelsPerMM = 370, grid = (32,32)):
         Stacked, IndexMap = max_pool_subdivided_images_3d(frames, grid) #stack
         TrueZ3D = GetTrueZ3D(IndexMap, ZCoord) #convert map into raw Z values 
         XLow,XHigh,YLow,YHigh = ConvertXYToPixelLocations(X,Y,PixelsPerMM)
-        
+
         MajorImage = CombineImages(XLow,XHigh,YLow,YHigh, Stacked, MajorImage)    
         ZMap = CombineImages(XLow,XHigh,YLow,YHigh, TrueZ3D, ZMap) #the problem 
 
@@ -1027,6 +1147,10 @@ def GridToCircle(GridLocations,XCenter, YCenter, Radius):
 def CalculateOutline(StartX = -1, StartY = -1, StartZ = -1,
                      shape = 'coin', SearchDistance = 40,
                      Precision = 1, FOVLOW = 1):
+    """calculates outline of an object (for now a coin).
+        If your coin is oblong, place the longer side along the Y axis
+        because it uses this to calculate the "radius".
+        Could really use an overhaul to allow range of shapes"""
     
     StartX, StartY, StartZ = int(StartX), int(StartY), float(StartZ)
     
@@ -1627,14 +1751,17 @@ def GetTrueZ3D(IndexMap, ZCoord):
 
     return TrueZ3D
 
-def NormalizeZMap(ZMap):
+def NormalizeZMap(ZMap, lowest_Z = 'default', highest_Z = 'default'):
     #takes matrix of true 3D locations and subtracts all by lowest value
     #and converts to graymap of up to 255
     #probably should do something involving removing outliers ---
     #if a point is 2x points away from its neighbor, make it its neighbor
     
-    NormalMap = ((ZMap - ZMap.min()) * 255/(ZMap.max() - ZMap.min()))
-    
+    if lowest_z == 'default' and highest_Z == 'default':
+        NormalMap = ((ZMap - ZMap.min()) * 255/(ZMap.max() - ZMap.min()))
+    else:
+        NormalMap = ((ZMap - lowest_Z) * 255 / (highest_Z - lowest_Z))
+        
     return NormalMap
 
 def GenerateZ(LowZ,HighZ,Precision):
