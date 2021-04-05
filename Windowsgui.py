@@ -219,7 +219,7 @@ def StackFolder(folder, StackedOutputFolder, ZMapOutputFolder, grid = (32,32)):
         Stacked, IndexMap = max_pool_subdivided_images_3d(frames, grid) #stack
         TrueZ3D = GetTrueZ3D(IndexMap, ZCoord) #convert map into raw Z values 
 
-        DepthImage = NormalizeZMap(ZMap,
+        DepthImage = NormalizeZMap(TrueZ3D,
                                    lowest_Z = lowest_Z,
                                    highest_Z = highest_Z) #problem: "blank space" is 0...
         DepthImage = DepthImage.astype(uint8)
@@ -1754,10 +1754,8 @@ def GetTrueZ3D(IndexMap, ZCoord):
 def NormalizeZMap(ZMap, lowest_Z = 'default', highest_Z = 'default'):
     #takes matrix of true 3D locations and subtracts all by lowest value
     #and converts to graymap of up to 255
-    #probably should do something involving removing outliers ---
-    #if a point is 2x points away from its neighbor, make it its neighbor
     
-    if lowest_z == 'default' and highest_Z == 'default':
+    if lowest_Z == 'default' and highest_Z == 'default':
         NormalMap = ((ZMap - ZMap.min()) * 255/(ZMap.max() - ZMap.min()))
     else:
         NormalMap = ((ZMap - lowest_Z) * 255 / (highest_Z - lowest_Z))
