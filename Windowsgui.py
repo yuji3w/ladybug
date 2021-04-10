@@ -2616,6 +2616,12 @@ try:
  
 except FileNotFoundError:
     #...because there's a hardcoded pi desktop scan file up there
+    print('setting DinoLite level to FLC 6, assuming you are using one rn')
+    ControlDino('FLCLevel 6')
+    print('assuming starting at optimum exposure location')
+    print('run command ControlDino("AE on") to turn exposure back on')
+    ControlDino('AE off')
+    
     print ('Press H to home, F to autofocus, D to autostack, space takes pic')
     print ('i,j,k,l move XY, - + move Z axis')
     
