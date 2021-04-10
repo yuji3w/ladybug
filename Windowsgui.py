@@ -2140,46 +2140,39 @@ def GridScan(ScanConditions): # DefaultScan dictionary available for modifying
     #CloseCamera(cap) #uncomment if things are strange here
 
 def XGoTo(XDest,speed = 10000):
-    #everything being switched to milimeters at this point, sorry. 
-
+    
     global GlobalX
 
 
     X,Y,Z,E = XDest, GlobalY, GlobalZ, GlobalR        
-    
-    GCode = GenerateCode(X,Y,Z,E,speed)
+    GlobalX = round(X,2) #round BEFORE sending
+    GCode = GenerateCode(GlobalX,Y,Z,E,speed)
     SendGCode(GCode)
-    #GlobalX = round(X,2)
-    GlobalX = X #DO NOT ROUND
+    
     XPosition.configure(text="X: "+str(GlobalX) + "/" + str(XMax))
     
 def YGoTo(YDest,speed = 10000):
-    #everything being switched to milimeters at this point, sorry. 
-
+    
     global GlobalY
 
 
     X,Y,Z,E = GlobalX, YDest, GlobalZ, GlobalR        
-    
-    GCode = GenerateCode(X,Y,Z,E,speed)
+    GlobalY = round(Y,2)
+    GCode = GenerateCode(X,GlobalY,Z,E,speed)
     SendGCode(GCode)
-    #GlobalY = round(Y,2)
-    GlobalY = Y
     
     YPosition.configure(text="Y: "+str(GlobalY) + "/" + str(YMax))
 
 def ZGoTo(ZDest,speed = 1000):
-    #everything being switched to milimeters at this point, sorry. 
-
+    
     global GlobalZ
 
 
     X,Y,Z,E = GlobalX, GlobalY, ZDest, GlobalR        
-    
-    GCode = GenerateCode(X,Y,Z,E,speed)
+    GlobalZ = round(Z,2)
+    GCode = GenerateCode(X,Y,GlobalZ,E,speed)
     SendGCode(GCode)
-    #GlobalZ = round(Z,2)
-    GlobalZ = Z
+    
     ZPosition.configure(text="Z: "+str(GlobalZ) + "/" + str(ZMax))    
 
 def AllGoTo(XDest=-1,YDest=-1,ZDest=-1,RDest=-1,speed = 3000,update=False,
@@ -2619,8 +2612,8 @@ try:
     #global GlobalR #I'm not sure why this causes a syntax error, it wasn'tbefore.
     GlobalR = conditions['R_Location']
 
-    GridScan(locations,conditions)
-
+    GridScan(locations,conditions) #long broken 
+ 
 except FileNotFoundError:
     #...because there's a hardcoded pi desktop scan file up there
     print ('Press H to home, F to autofocus, D to autostack, space takes pic')
