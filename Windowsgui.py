@@ -1957,15 +1957,11 @@ def FindZFocus(ZCoord='broad', Comprehensive = False,
 
 def ControlDino(setting = "FLCLevel 6"):
     """uses dinolite windows batch file to control settings on EDGE plus model.
-    assumes batch file in same folder as this gui
-    Can change autoexposure or set value, which LEDs are on, and brightness as group
-    Some values are redundant or unavailable with my cam, E.G FLC control supercedes simple LED
-
-    "FLCLevel" --- 1-6 brightness, if  0 convert to LED off
-    "FLCSwitch": control quadrants, value is 1111, 1010...
-    "AE on": this means you CAN select exposure. Confusing
-    "AE off"
-    "EV": sets exposure values 16-220
+    FLCLevel: 1-6 brightness, if  0 convert to LED off
+    FLCSwitch: control quadrants, value is 1111, 1010...
+    AE on
+    AE off (locks current exposure value)
+    EV: sets exposure values 16-220, strange behavior
     """
     
 
@@ -2153,8 +2149,8 @@ def XGoTo(XDest,speed = 10000):
     
     GCode = GenerateCode(X,Y,Z,E,speed)
     SendGCode(GCode)
-    GlobalX = round(X,2)
-    
+    #GlobalX = round(X,2)
+    GlobalX = X #DO NOT ROUND
     XPosition.configure(text="X: "+str(GlobalX) + "/" + str(XMax))
     
 def YGoTo(YDest,speed = 10000):
@@ -2167,7 +2163,8 @@ def YGoTo(YDest,speed = 10000):
     
     GCode = GenerateCode(X,Y,Z,E,speed)
     SendGCode(GCode)
-    GlobalY = round(Y,2)
+    #GlobalY = round(Y,2)
+    GlobalY = Y
     
     YPosition.configure(text="Y: "+str(GlobalY) + "/" + str(YMax))
 
@@ -2181,8 +2178,8 @@ def ZGoTo(ZDest,speed = 1000):
     
     GCode = GenerateCode(X,Y,Z,E,speed)
     SendGCode(GCode)
-    GlobalZ = round(Z,2)
-    
+    #GlobalZ = round(Z,2)
+    GlobalZ = Z
     ZPosition.configure(text="Z: "+str(GlobalZ) + "/" + str(ZMax))    
 
 def AllGoTo(XDest=-1,YDest=-1,ZDest=-1,RDest=-1,speed = 3000,update=False,
