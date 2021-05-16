@@ -63,6 +63,8 @@ GlobalY = 0 #towards and away from you (on finder)
 GlobalZ = 0
 GlobalR = 0 #keep same naming scheme, but R = rotation
 
+PixelsPerMM = 370 #This will cause hellfire if used incorrectly...
+
 #These are scan parameters intended to be set by the GUI and can otherwise be ignored
 
 XScanMin = 0
@@ -94,6 +96,8 @@ ZSpeed = 1000
 
 BigZ = 2
 LittleZ = 0.1 #maybe even too big but can be played with
+
+
 
 win = tk.Tk()
 myFont = tk.font.Font(family='Helvetica', size=12, weight='bold')
@@ -598,8 +602,8 @@ def WaitForConfirmMovements(X,Y,Z,attempts=100): #50 is several seconds
                 return positions #we have arrived
             else:
     
-                if j > 15 and PositionsList[j] == PositionsList[j-14]:
-                    print('Printer not moving, but not at destination? check inputs')
+                if j > 40 and PositionsList[j] == PositionsList[j-14]:
+                    print('This one gets stuck in a loop when it fails')
                     
                     return False # Different failure condition than unable to communicate. Bad inputs
                 
@@ -784,8 +788,8 @@ def AutoCoin(cap,
              SearchXMin = 20, SearchXMax = 100,
              SearchYMin=20, SearchYMax=100,
              SearchZMin = 0,SearchZMax = 5,
-             FieldOfView = 1.6, FocusPoints = 7,
-             MaxFocusPoints = 10,
+             FieldOfView = 1.6, FocusPoints = 11,
+             MaxFocusPoints = 15,
              DepthOfField = 0.1, #0.05 for high res 
              FirstRadius = 10,
              SaveLocation = "AutoCoin\\",
@@ -878,14 +882,21 @@ def AutoCoin(cap,
             if is_dark(CoinFocusPic): #prevent focusing on edges
                 print("off the edge AKA dark pic, don't count this one")
                 continue
+            elif CalculateBlur(CoinFocusPic) < 100: #not dark, still blurry
+                print('ignoring blurry location')
+                continue
             
             TrueCoins[(XMiddle,YMiddle)]['PointsOfFocus'].append((xfocus,yfocus,FocusHeight,CoinFocusPic))
             FocusSet.add(FocusHeight) #Future: Make sure it's not too many images, or use best ones
+
             
             #Add to FocusDictionary here
 
+        FocusList = GenerateZ(min(FocusSet)-DepthOfField,
+                              max(FocusSet)+DepthOfField,
+                              DepthOfField) #comprehensive search +1
         
-        FocusList = sorted(list(FocusSet))
+        #FocusList = sorted(list(FocusSet))
 
         print('Z Heights we are looking at: {}'.format(FocusList))
 
@@ -992,7 +1003,8 @@ def FindMissingLocations(FullLocations, PartialLocations):
 
 
 def SortOrStackPipe(ParentFolder, FocusDictionary = {},
-                    extension = ".jpg", AcceptableBlur = 150):
+                    extension = ".jpg", AcceptableBlur = 150,
+                    grid=(80,80), StackStitchBool=True):
     #this will take a parent folder containing standard output of scan
     #create symbolic copies of all files sorted by X/Y location
     #get rid of all files with no useful information (completely blurred)
@@ -1040,7 +1052,8 @@ def SortOrStackPipe(ParentFolder, FocusDictionary = {},
     StitchThese = ParentFolder + "\\STITCH THESE for immediate results"
     StitchMix = ParentFolder + "\\Add stacked images here then stitch"
     StackThese = ParentFolder + "\\Stack these if desired"
-    
+    StackedOutputFolder = ParentFolder + "\\Programmatically Stacked"
+    ZMapOutputFolder = ParentFolder + "\\Programmatically produced depthmaps"
     
     print('making new directories and moving things around...')
     if not os.path.exists(ZSorted):
@@ -1055,6 +1068,10 @@ def SortOrStackPipe(ParentFolder, FocusDictionary = {},
         os.makedirs(StitchMix)
     if not os.path.exists(BestPerStack):
         os.makedirs(BestPerStack)
+    if not os.path.exists(StackedOutputFolder):
+        os.makedirs(StackedOutputFolder)
+    if not os.path.exists(ZMapOutputFolder):
+        os.makedirs(ZMapOutputFolder)
         
     #Find multiple Z heights for each XY. Future: Do all three in one go
     findSameZ.main(originals,ZSorted,extension=extension,copy=False)
@@ -1099,7 +1116,23 @@ def SortOrStackPipe(ParentFolder, FocusDictionary = {},
                 
     print('{} images need to be stacked before optimal stitching'.format(count))
 
-
+    #51521 adding automatic stack and stitch 
+    if StackStitchBool == True:
+        print('stacking folders in automatic pipeline')
+        StackFolder(DeBlurred, StackedOutputFolder, ZMapOutputFolder, grid = grid)
+        print('stacking done, stitching now')
+        StitchedImg = StitchFolder(StackedOutputFolder, PixelsPerMM = PixelsPerMM,
+                                  GiantSize = 'default', StitchZMap = False)
+        SavePicture(ParentFolder + "Auto stacked and stitched.jpg",StitchedImg)
+        print('saved auto stacked and stitched image. Use ICE for superior quality!')
+        StitchedImg = StitchFolder(ZMapOutputFolder, PixelsPerMM = PixelsPerMM,
+                                  GiantSize = 'default', StitchZMap = True)
+        SavePicture(ParentFolder + "Auto stitched depthmap.jpg",StitchedImg)
+        print('saved auto stacked and stitched depthmap. Use ICE for superior quality!')
+    
+    print('all actions in stack and sort pipeline done')
+        
+    
 def MakeNameFromPositions(X,Y,Z,R,FileType = ".jpg"):
     
     XStr = (''.join(filter(lambda i: i.isdigit(), ('{0:.2f}'.format(X))))).zfill(5)
