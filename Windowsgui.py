@@ -2617,46 +2617,37 @@ AutoCoinButton.pack(side = tk.BOTTOM, pady=5)
 SecondaryBottomFrame = tk.Frame(BottomFrame)
 SecondaryBottomFrame.pack(side=tk.TOP)
 
-#Display analog value of PD
 
-"""begin resume scan if failed"""
-
+#oct 2021 try except block now catches use of controldino
+#AKA remove hardcoded resume save state
+#Completely different from original pi version anyway
 
 try:
-    cap = StartCamera(Width=640,Height=480)
+
+    cap = StartCamera(Width=640,Height=480) 
     frame = TakePicture(cap) #for testing
     
     LadyBug = RestartSerial() #initiate GCODE based machine
     StartThreadedCamera() #This is the main opencv window you interact with
     
-    scan_file = open('/home/pi/Desktop/ladybug/scandata.pkl', 'rb') 
-    #I can't uncomment this pi related stuff without fixing the whole try except block
-    scan_params = pickle.load(scan_file)
-    scan_file.close()
-
-    HomeX()
-    HomeY()
-    HomeZ()
-
-    locations = scan_params[0] #position data
-    conditions = scan_params[1] #save location, filetype, resolution, timeout, numfailures
-
-    """because R has no endstop we have to set it to what it was in the scan"""
-    #global GlobalR #I'm not sure why this causes a syntax error, it wasn'tbefore.
-    GlobalR = conditions['R_Location']
-
-    GridScan(locations,conditions) #long broken 
- 
-except FileNotFoundError:
-    #...because there's a hardcoded pi desktop scan file up there
-    print('setting DinoLite level to FLC 6, assuming you are using one rn')
+    #HomeX()
+    #HomeY()
+    #HomeZ()
+    print ('Press H to home, F to autofocus, D to autostack, space takes pic')
+    print ('i,j,k,l move XY, - + move Z axis')
+        
     ControlDino('FLCLevel 6')
+    print('setting DinoLite level to FLC 6, assuming you are using one rn')
     print('assuming starting at optimum exposure location')
     print('run command ControlDino("AE on") to turn exposure back on')
     ControlDino('AE off')
+
+except FileNotFoundError:
+    print('hmm, seems you don\'t have dinolite controls installed ')
+        
+except OSError: #"side by side configuration incorrect"
+    print('hmm, seems like dinolite controls is installed improperly')
+
+print('Lets scan some stuff')
     
-    print ('Press H to home, F to autofocus, D to autostack, space takes pic')
-    print ('i,j,k,l move XY, - + move Z axis')
-    
-    print('Lets scan some stuff')
     
