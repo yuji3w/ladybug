@@ -4,7 +4,7 @@
 #and like physically clicking buttons on the dinolite program
 
 #December 28 2020: It has been a heck of a year since March 16.
-
+#December 14 21: New computer, probably new dev cycle. 
 
 
 from numpy import * #for generating scan parameters
