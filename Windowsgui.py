@@ -573,6 +573,7 @@ def GetPositions(machine = 'ladybug',tries=1):
 
     if not dump:
             #This is one big unsolved problem. Why did the connection break?
+            #print('GetPositions: Unable to return any data')
             return False
 
 
@@ -621,10 +622,10 @@ def RestartSerial(port= -1, BAUD = -1,timeout=1): #from 0.1 to 1 for timeout tes
     FoundMachine = False
     
     global LadyBug #below functions expect this global
-
+    
     try:
         CloseSerial() #will pass if no port by ladybug name open
-    except Exception: #if LadyBug turned out to be a boolean or something
+    except AttributeError: #if LadyBug turned out to be a nonetype
         pass
 
     if port != -1 and BAUD !=-1: #try given parameters first
@@ -633,7 +634,9 @@ def RestartSerial(port= -1, BAUD = -1,timeout=1): #from 0.1 to 1 for timeout tes
 
             time.sleep(0.01)
             LadyBug = TryToConnect(port,BAUD, timeout=timeout)
-            if LadyBug:
+
+            if LadyBug and GetPositions():
+                #LadyBug checks if connected machine. GetPositions checks if data can be returned
                 FoundMachine=True
                 break
             else:
@@ -670,9 +673,10 @@ Or press enter to try all available ports automatically.
         for val in PortsAndBauds: #zipped together so we only need one break 
             port, BAUD = val[0],val[1]
             LadyBug = TryToConnect(port,BAUD,timeout)
-            if LadyBug:
+            if LadyBug and GetPositions():
                 FoundMachine = True
                 break
+            
                 
     if FoundMachine:
         print('Successful connection on port {} with Baud rate {}'.format(port, BAUD))
@@ -688,6 +692,7 @@ Or press enter to try all available ports automatically.
         print("Unable to connect. Um... jiggle the cables?")
         
 def TryToConnect(port, BAUD, timeout):
+
     global LadyBug
 
     if isinstance(port, str):
@@ -698,19 +703,36 @@ def TryToConnect(port, BAUD, timeout):
         port = 'COM' + str(port)
     else:
         print('invalid connection parameters')
-        return False
+        return None
 
     print("trying to connect with port {} and BAUD {}...".
                     format(port, BAUD))
-    try: 
-        LadyBug = serial.Serial(port, BAUD, timeout=timeout)
-        time.sleep(1)
-        if LadyBug:
-            return LadyBug
 
-    except serial.serialutil.SerialException:
-        return False
+
+    if "LadyBug" in globals(): #probably not important
+        if 'serial' in str(type(LadyBug)):
+            if LadyBug.isOpen():
+                LadyBug.close()
+                
     
+    for i in range(1):
+
+        try:
+            LadyBug = serial.Serial(port, BAUD, timeout=timeout)
+            #print('found a ladybug?')
+            time.sleep(5) #this 5 instead of 1 represents 3 hours of frustration
+            if LadyBug:
+                if 'serial' in str(type(LadyBug)):
+                    #print('it has a serial in it')
+                    if GetPositions():
+                     #   print('it has positions')
+                        return LadyBug
+                    
+
+        except serial.serialutil.SerialException:
+            pass
+            #print('error: port is already opened (but not assigned to ladybug)')
+
 def UpdateFocusDict(FocusDictionary, location, pic):
     #used to allow threaded calculation of focus during time waits
     blur = CalculateBlur(pic)
@@ -734,9 +756,12 @@ def CloseSerial(machine = 'ladybug'):
     try:
         if machine == 'ladybug':
             machine = LadyBug
-        machine.close()
+            machine.close() #note: Does NOT actually remove variable
+            
     except NameError:
-        pass
+        print('ladybug the variable does not exist')
+    except AttributeError:
+        print('ladybug is nonetype')
 
 def CircleDemo(cap, speed=500): #finds outline, focuses, goes around edge
     param = CalculateOutline()
@@ -1558,8 +1583,8 @@ def ShowCamera(cap=False,camera_choice=1,TrackTheBug=False,
             
             elif img_name != prev_img_name: 
                 counter = 0            
-            print(SavePath)
-            print(img_name)
+            #print(SavePath)
+            #print(img_name)
             cv2.imwrite(SavePath + img_name, frame)
             print("{} written!".format(img_name))
             prev_img_name = img_name.lstrip(string.digits) 
