@@ -4,7 +4,7 @@
 #and like physically clicking buttons on the dinolite program
 
 #December 28 2020: It has been a heck of a year since March 16.
-#December 14 21: New computer, probably new dev cycle. 
+#December 14 21: New computer, probably new dev cycle. AKA spaghetti
 
 
 from numpy import * #for generating scan parameters
@@ -518,7 +518,7 @@ def TurnOnFan(speed=250, machine = 'ladybug'): #up to 250, adjust if shrieking
 def DisengageSteppers():
     SendGCode("M18")
 
-def GetPositions(machine = 'ladybug',tries=1):
+def GetPositions(machine = 'ladybug',tries=3):
     #returns dictionary X,Y,Z and maybe R of actual position at time of request
     #this is the most likely function to be culprit if movement works but scan doesn't
     #Originally meant for normal cartesian marlin
@@ -530,7 +530,7 @@ def GetPositions(machine = 'ladybug',tries=1):
         machine = LadyBug 
 
     previous_buffer = machine.read_all() #clear buffer essentially
-    LadyBug.reset_input_buffer() #possible fix attempt 1122021
+    machine.reset_input_buffer() #possible fix attempt 1122021
     previous_buffer = machine.read_all() #someone said do this twice
     
     SendGCode("M114") #report machine status
@@ -539,11 +539,13 @@ def GetPositions(machine = 'ladybug',tries=1):
     
     for i in range (tries): #communication back and forth not instant, i for failsafe
         try:
-            dump = machine.read_until().decode('utf-8') #kept in bytes. read_all inconsistent
+            dump = machine.read_until().decode('utf-8','ignore')
+            #kept in bytes. read_all inconsistent. Ignore added for K1 printer
         
         except serial.SerialTimeoutException(): #other exceptions found here
         
             print('Serial Timeout Exception') #This NEVER is what gets tripped. 
+            #with easythreed, this fails with cannot inherit from base class
             return False
 
             #print('no dump. communication ERROR')
@@ -604,7 +606,8 @@ def WaitForConfirmMovements(X,Y,Z,attempts=100): #50 is several seconds
             else:
     
                 if j > 40 and PositionsList[j] == PositionsList[j-14]:
-                    print('This one gets stuck in a loop when it fails')
+                    print('This one gets stuck in a loop when it fails') #new computer, no
+                    #possibly caused by long movements first, just an observation with callibrateplate
                     
                     return False # Different failure condition than unable to communicate. Bad inputs
                 
@@ -617,7 +620,7 @@ def WaitForConfirmMovements(X,Y,Z,attempts=100): #50 is several seconds
 
 def RestartSerial(port= -1, BAUD = -1,timeout=1): #from 0.1 to 1 for timeout test
 
-    PossibleBauds = (115200, 9600) #expand as more options are known
+    PossibleBauds = [115200] #expand as more options are known
 
     FoundMachine = False
     
@@ -635,7 +638,7 @@ def RestartSerial(port= -1, BAUD = -1,timeout=1): #from 0.1 to 1 for timeout tes
             time.sleep(0.01)
             LadyBug = TryToConnect(port,BAUD, timeout=timeout)
 
-            if LadyBug and GetPositions():
+            if LadyBug:
                 #LadyBug checks if connected machine. GetPositions checks if data can be returned
                 FoundMachine=True
                 break
@@ -673,7 +676,7 @@ Or press enter to try all available ports automatically.
         for val in PortsAndBauds: #zipped together so we only need one break 
             port, BAUD = val[0],val[1]
             LadyBug = TryToConnect(port,BAUD,timeout)
-            if LadyBug and GetPositions():
+            if LadyBug:
                 FoundMachine = True
                 break
             
@@ -691,7 +694,7 @@ Or press enter to try all available ports automatically.
     else:
         print("Unable to connect. Um... jiggle the cables?")
         
-def TryToConnect(port, BAUD, timeout):
+def TryToConnect(port, BAUD, timeout, return_anyway = False):
 
     global LadyBug
 
@@ -719,15 +722,31 @@ def TryToConnect(port, BAUD, timeout):
 
         try:
             LadyBug = serial.Serial(port, BAUD, timeout=timeout)
-            #print('found a ladybug?')
+            print('trying to connect with serial.serial...', end = " ")
             time.sleep(5) #this 5 instead of 1 represents 3 hours of frustration
             if LadyBug:
                 if 'serial' in str(type(LadyBug)):
-                    #print('it has a serial in it')
-                    if GetPositions():
-                     #   print('it has positions')
-                        return LadyBug
+                    print('it has a serial in it...', end = " ")
+                    for j in range(4): 
+
+                        time.sleep(0.5)
+                        
+                        if GetPositions(): #sometimes first getpos don't work
+                            print('and returns positions after {} attempts. Woo!'.format(j+1))
+                            return LadyBug
+
+                    else:
+                        print('but does not return positions.')
+                        if return_anyway: #for debugging
+                        #easythreed: Try connecting once more...
+                            print('returning anyway')
+                            return LadyBug
                     
+                else:
+                    print('but it isnt a proper serial connection')
+                
+            else:
+                print('but no connection')
 
         except serial.serialutil.SerialException:
             pass
@@ -759,10 +778,11 @@ def CloseSerial(machine = 'ladybug'):
             machine.close() #note: Does NOT actually remove variable
             
     except NameError:
-        print('ladybug the variable does not exist')
+        #print('ladybug the variable does not exist')
+        pass
     except AttributeError:
-        print('ladybug is nonetype')
-
+        #print('ladybug is nonetype')
+        pass
 def CircleDemo(cap, speed=500): #finds outline, focuses, goes around edge
     param = CalculateOutline()
     xc, yc, r = param[0], param[1], param[2]
@@ -828,6 +848,7 @@ def AutoCoin(cap,
 
     
     positions = GetPositions()
+    
     if (positions['X'] == 0 or
         positions['Y'] == 0 or
         positions['Z'] == 0):
@@ -1148,11 +1169,11 @@ def SortOrStackPipe(ParentFolder, FocusDictionary = {},
         print('stacking done, stitching now')
         StitchedImg = StitchFolder(StackedOutputFolder, PixelsPerMM = PixelsPerMM,
                                   GiantSize = 'default', StitchZMap = False)
-        SavePicture(ParentFolder + "Auto stacked and stitched.jpg",StitchedImg)
+        SavePicture(ParentFolder + "\\Auto stacked and stitched.jpg",StitchedImg)
         print('saved auto stacked and stitched image. Use ICE for superior quality!')
         StitchedImg = StitchFolder(ZMapOutputFolder, PixelsPerMM = PixelsPerMM,
                                   GiantSize = 'default', StitchZMap = True)
-        SavePicture(ParentFolder + "Auto stitched depthmap.jpg",StitchedImg)
+        SavePicture(ParentFolder + "\\Auto stitched depthmap.jpg",StitchedImg)
         print('saved auto stacked and stitched depthmap. Use ICE for superior quality!')
     
     print('all actions in stack and sort pipeline done')
@@ -1457,10 +1478,11 @@ def RotateScan(ScanLocations, degrees = 30):
     return (ScanLocations)
 
 #all assumes cv2 here
-def StartCamera(camera = 1, Width = 640, Height = 480):
+def StartCamera(camera = 0, Width = 640, Height = 480):
     #assumes having a built-in webcam, too. change to 0 otherwise
     #most fundamental thing I guess. Change Width and Height here?
-
+    #note: New computer has USB camera be 0. Aaaargh!
+    
     cap = cv2.VideoCapture(camera)
     cap.set(3,Width)
     cap.set(4,Height)
@@ -2381,6 +2403,10 @@ def HomeZ():
     ZPosition.configure(text="Z: "+str(GlobalZ) + "/" + str(ZMax))
     
 def Home():
+    global GlobalX
+    global GlobalY
+    global GlobalZ #incredibly, only noticed these missing 10/28/21
+    
     #probably could consume the other three
     #SLOW DOWN FIRST 1/10/21
     SendGCode('M203 Y20 X30') #this alone changes things so much
@@ -2649,7 +2675,7 @@ SecondaryBottomFrame.pack(side=tk.TOP)
 
 try:
 
-    cap = StartCamera(Width=640,Height=480) 
+    cap = StartCamera() 
     frame = TakePicture(cap) #for testing
     
     LadyBug = RestartSerial() #initiate GCODE based machine

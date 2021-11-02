@@ -1,0 +1,1 @@
+DN_DS_Ctrl.exe Init -CAM1
