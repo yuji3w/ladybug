@@ -2,7 +2,7 @@ circlify==0.13
 imutils==0.5.4
 matplotlib==3.4.3
 numpy==1.21.2
-Pillow==8.3.2
+Pillow==10.0.1
 pyserial==3.5
 tools==0.1.9
 tsp==0.0.9
